@@ -2,9 +2,65 @@
 
 import random
 
+from valley.brains.base import Brain, Decision
 from valley.creatures import Creature
+from valley.simulation import Simulation
 from valley.species import SPECIES
 from valley.world import PLANT_MAX, World
+
+
+class FixedRng:
+    """A stand-in for `event_rng` whose every answer is predictable."""
+
+    def __init__(self, roll=0.5):
+        self.roll = roll
+
+    def random(self):
+        return self.roll
+
+    def choice(self, seq):
+        return seq[0]
+
+    def randint(self, a, b):
+        return a
+
+    def randrange(self, n):
+        return 0
+
+    def uniform(self, a, b):
+        return a
+
+    def sample(self, population, k):
+        return list(population)[:k]
+
+    def shuffle(self, seq):
+        return None
+
+
+class ScriptedBrain(Brain):
+    """Chooses the action named for each creature id (or `default`), with a fixed confidence."""
+    name = "scripted"
+
+    def __init__(self, choices=None, default="rest", confidence=1.0, source="baseline"):
+        self.choices = choices or {}
+        self.default = default
+        self.confidence = confidence
+        self.source = source
+
+    def decide(self, requests, step=0):
+        out = []
+        for request in requests:
+            choice = self.choices.get(request.creature_id, self.default)
+            if callable(choice):
+                choice = choice(request, step)
+            out.append(Decision(choice, {choice: 1.0}, self.confidence, self.source))
+        return out
+
+
+def make_sim(world, creatures, choices=None, default="rest", confidence=1.0, **kwargs):
+    brain = ScriptedBrain(choices, default, confidence)
+    brains = {species: brain for species in SPECIES}
+    return Simulation(seed=1, brains=brains, world=world, creatures=creatures, **kwargs)
 
 
 def world_from_rows(rows, plants=None, seed=0):
