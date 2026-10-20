@@ -34,7 +34,9 @@ def _add_run_arguments(parser: argparse.ArgumentParser, log_default: bool) -> No
     parser.add_argument("--days", type=int, default=30)
     parser.add_argument("--size", type=_size, default=(28, 18), help="map size, such as 28x18")
     parser.add_argument("--max-creatures", type=int, default=50)
-    parser.add_argument("--brain", default="rules", help="jev, laya, rules, random or system-one@URL#MODEL")
+    parser.add_argument("--brain", default="jev",
+                        help="jev (the default, needs TYPESAFE_API_KEY), laya, system-one@URL#MODEL, or the offline "
+                             "baselines rules and random")
     parser.add_argument("--prey-brain", default=None, help="brain for rabbits and deer (default: --brain)")
     parser.add_argument("--wolf-brain", default=None, help="brain for wolves (default: --brain)")
     parser.add_argument("--hesitate-below", type=float, default=None, metavar="CONFIDENCE",

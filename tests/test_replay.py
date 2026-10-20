@@ -153,7 +153,7 @@ def test_labels_and_run_ids():
 
 def test_the_run_command_writes_a_replay(tmp_path, capsys):
     out = tmp_path / "r"
-    assert cli.main(["run", "--days", "2", "--out", str(out), "--quiet"]) == 0
+    assert cli.main(["run", "--brain", "rules", "--days", "2", "--out", str(out), "--quiet"]) == 0
     assert (out / "replay.json").exists()
     assert "run-rules-seed7" in capsys.readouterr().out
 
@@ -184,3 +184,23 @@ def test_creatures_carry_the_age_they_had_when_they_entered_the_valley():
     newborns = [c for c in replay["creatures"].values() if c["born"] > 0]
     assert starters and all(c["age0"] >= SPECIES[c["species"]].adult_age for c in starters)
     assert newborns and all(c["age0"] == 0 for c in newborns)
+
+
+def test_run_and_live_use_a_model_by_default_so_they_need_a_key(tmp_path, monkeypatch, capsys):
+    monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+    parser = cli.build_parser()
+    assert parser.parse_args(["run"]).brain == "jev" and parser.parse_args(["live"]).brain == "jev"
+    assert cli.main(["run", "--days", "1", "--out", str(tmp_path / "x"), "--quiet"]) == 2
+    assert "TYPESAFE_API_KEY" in capsys.readouterr().err
+    assert not (tmp_path / "x").exists() or not (tmp_path / "x" / "replay.json").exists()
+    assert cli.main(["live", "--port", "0", "--out", str(tmp_path / "y")]) == 2
+    assert "TYPESAFE_API_KEY" in capsys.readouterr().err
+
+
+def test_there_is_no_bundled_sample_run():
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    assert not (root / "examples" / "sample-replay.json").exists()
+    viewer = (root / "viewer" / "index.html").read_text()
+    assert "load-sample" not in viewer and "sample-replay" not in viewer
+    assert "sample-replay" not in (root / "README.md").read_text()

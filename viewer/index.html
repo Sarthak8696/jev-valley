@@ -187,10 +187,9 @@
         <div class="dropzone" id="dropzone">
           <div>
             <h2>Drop a replay file here</h2>
-            <p>Open a <code>replay.json</code> written by <code>python -m valley run</code>, or load the sample month.</p>
+            <p>Open the <code>replay.json</code> that <code>python -m valley run</code> wrote, or watch a run live with <code>python -m valley live</code>.</p>
             <div class="row">
               <button class="btn primary" id="choose">Choose a file</button>
-              <button class="btn" id="load-sample">Load the sample month</button>
             </div>
             <input type="file" id="file" accept=".json,application/json" hidden>
             <div class="error" id="drop-error" role="alert"></div>
@@ -1175,16 +1174,6 @@ $("#file").addEventListener("change", (e) => { if (e.target.files[0]) loadFile(e
 window.addEventListener("dragover", (e) => { e.preventDefault(); els.dropzone.classList.add("over"); });
 window.addEventListener("dragleave", () => els.dropzone.classList.remove("over"));
 window.addEventListener("drop", (e) => { e.preventDefault(); els.dropzone.classList.remove("over"); if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]); });
-$("#load-sample").onclick = async () => {
-  for (const url of ["sample-replay.json", "../examples/sample-replay.json", "examples/sample-replay.json"]) {
-    try {
-      const response = await fetch(url);
-      if (response.ok) { load(await response.json()); return; }
-    } catch (error) { /* try the next location */ }
-  }
-  showDrop("The sample month was not found next to this page. Drop a replay file instead.");
-};
-
 /* ---- live mode */
 function startLive(url) {
   state.live = { url };

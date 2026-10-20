@@ -4,11 +4,7 @@ A small simulated valley where every rabbit, deer and wolf decides its next acti
 
 <!-- Add here: a GIF of the 3D viewer and a link to the hosted viewer. The author records the GIF and hosts the page. -->
 
-Play the sample month with nothing installed but Python. It is a recording of the offline `rules` brain, so it needs no API key and the probabilities it shows are the rules brain's, not a model's. The viewer loads Three.js from a CDN, so it needs a network connection:
-
-```bash
-python -m valley view examples/sample-replay.json -o valley.html   # then open valley.html in a browser
-```
+There is no bundled demo. Every run the viewer plays is one you make with a model: see [Run it](#run-it).
 
 ## The question
 
@@ -24,7 +20,7 @@ To reproduce them, see [Run it](#run-it).
 
 **The model decides what. The code decides how.** The model only ever returns one action key: `eat`, `drink`, `flee`, `hide`, `rest`, `seek_mate`, `follow_group` or `explore` for rabbits and deer, and `hunt`, `scavenge`, `drink`, `hide`, `rest`, `seek_mate`, `follow_group` or `explore` for wolves. Paths, catches, births and deaths are ordinary deterministic code, so a run is fair and repeatable.
 
-Each hour, every animal gets a plain-language view of what it can see and feel, and one `Choice` question. This is a real request, written by the client from a real view in the sample world:
+Each hour, every animal gets a plain-language view of what it can see and feel, and one `Choice` question. This is a real request, written by the client from a real view of a simulated valley:
 
 ```json
 {
@@ -78,25 +74,27 @@ Python 3.11 or newer. The simulation, client and viewer need nothing else. `matp
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev,charts]"
 python -m pytest                      # every test runs offline, with no API key
-python -m valley tune --check         # the balance targets for the offline brains
-python -m valley run --seed 57        # a month with the rules brain, written to runs/
-python -m valley view runs/run-rules-seed57/replay.json -o valley.html
+python -m valley tune --check         # offline: checks the balance of the baseline brains
 ```
 
-Point it at Jev or Laya through environment variables. Keys are read only from the environment and never written to a log:
+Runs use a model, so they need a key. Keys are read only from the environment and never written to a log:
 
 ```bash
 export TYPESAFE_API_KEY=...           # required for jev; also TYPESAFE_BASE_URL, TYPESAFE_MODEL
 export LAYA_BASE_URL=http://localhost:8000   # check Laya's own docs for its port and model name
 export LAYA_MODEL=laya-auto                  # optional: LAYA_API_KEY
-python -m valley run --brain jev --days 2 --log-requests   # a small first run
+python -m valley run --seed 7 --days 2 --log-requests    # a small first run with Jev, the default brain
+python -m valley run --brain laya --seed 7 --days 2 --log-requests
 ```
 
-Watch a valley being decided, as it happens (binds to 127.0.0.1 only):
+Watch a run, either after the fact or as it is decided (live mode binds to 127.0.0.1 only):
 
 ```bash
-python -m valley live --brain jev --seed 57 --open
+python -m valley view runs/run-jev-seed7/replay.json -o valley.html   # then open valley.html in a browser
+python -m valley live --seed 7 --open
 ```
+
+The viewer loads Three.js from a CDN, so it needs a network connection. The offline `rules` and `random` brains are the baselines the models are compared against. They are not run by default; name one with `--brain rules` if you want to see it.
 
 Reproduce the results. `bench` prints how many decisions and requests it expects and asks before spending any, skips runs that are already done, and writes everything to `results/`:
 
