@@ -12,6 +12,12 @@ from valley.world import DIRECTIONS, FOREST, WATER, chebyshev
 
 HIDING_CATCH_FACTOR = 0.5
 FLEEING_CATCH_FACTOR = 0.7
+# Wolves are not perfect hunters. Yellowstone wolves succeed in roughly 15-26% of hunts and prefer calves and
+# weakened animals, so a hunting wolf can lose a prey that is still some way off, and a weak animal is easier to catch.
+LOSE_TRAIL_DISTANCE = 2
+LOSE_TRAIL_CHANCE = 0.4
+WEAK_PREY_BIAS = 1.0  # catch chance changes by this much for every 100% of energy the prey is below half
+WEAK_PREY_RANGE = (0.4, 1.6)
 EXPLORE_TURN_CHANCE = 0.25
 SCAVENGE_STEPS = 2
 SCAVENGE_BITE = 15
@@ -171,6 +177,11 @@ def hunt(sim, creature) -> None:
         explore(sim, creature)
         return
     target = prey[0]
+    if (chebyshev(creature.x, creature.y, target.x, target.y) > LOSE_TRAIL_DISTANCE
+            and sim.event_rng.random() < LOSE_TRAIL_CHANCE):
+        creature.remember(sim.step_no, f"lost the trail of {target.name} the {target.species}")
+        explore(sim, creature)
+        return
     for _ in range(creature.spec.hunt_speed):
         if chebyshev(creature.x, creature.y, target.x, target.y) <= 1:
             break
@@ -182,6 +193,8 @@ def hunt(sim, creature) -> None:
 
 def _try_catch(sim, wolf, prey) -> None:
     chance = wolf.spec.catch_chance[prey.species]
+    low, high = WEAK_PREY_RANGE
+    chance *= max(low, min(high, 1.0 + WEAK_PREY_BIAS * (0.5 - prey.energy_ratio)))
     if sim.world.terrain(prey.x, prey.y) == FOREST and prey.executed == "hide":
         chance *= HIDING_CATCH_FACTOR
     if prey.executed == "flee":

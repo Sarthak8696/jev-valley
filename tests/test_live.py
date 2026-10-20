@@ -100,7 +100,7 @@ def test_the_stream_sends_valid_frames_in_order_and_saves_a_matching_replay(tmp_
     meta = events[0][1]
     assert meta["format"] == FORMAT and meta["meta"]["steps"] == 24 and meta["meta"]["seed"] == 19
     assert len(meta["frames"]) == 1 and meta["frames"][0]["step"] == 0
-    assert len(meta["creatures"]) == 26
+    assert len(meta["creatures"]) == 39
 
     frames = [data for kind, data in events if kind == "frame"]
     assert [f["step"] for f in frames] == list(range(1, 25))

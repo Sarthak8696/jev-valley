@@ -18,19 +18,24 @@ PASSABLE = (GRASS, FOREST)
 # Compass order, clockwise from north. `x` grows east and `y` grows south.
 DIRECTIONS = [(0, -1), (1, -1), (1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1)]
 
-DEFAULT_WIDTH = 28
-DEFAULT_HEIGHT = 18
+DEFAULT_WIDTH = 40
+DEFAULT_HEIGHT = 26
 
 # Tunable world values (spec 5.4), tuned in phase 5. Starting values and reasons are in the Decisions log.
-GRASS_REGROWTH = 0.0125
-FOREST_REGROWTH = 0.0109
+GRASS_REGROWTH = 0.0048
+FOREST_REGROWTH = 0.00419
 CARCASS_ROT = 0.29
 CARCASS_LIFETIME = 48
-DEFAULT_MAX_CREATURES = 50
+DEFAULT_MAX_CREATURES = 75
 
 MAX_MAP_ATTEMPTS = 500
 MIN_WATER_AREAS = 2
 MIN_PASSABLE_SHARE = 0.60
+
+# No land tile is farther than this from water, so an animal that can see 5 tiles can always find a drink
+# by wandering. Phase 5.5 of the ecology work: with the old map 31% of rabbit deaths were thirst.
+WATER_REACH = 5
+RIVER_FORDS = 3  # gaps where animals can cross the stream
 
 
 def derive_seed(seed: int, stream: str, attempt: int = 0) -> int:
@@ -219,14 +224,74 @@ class World:
 def _generate_cells(rng: random.Random, width: int, height: int) -> str:
     area = width * height
     grid = [[GRASS] * width for _ in range(height)]
-    for _ in range(max(2, area // 180)):
+    for _ in range(max(2, area // 150)):
         _paint_blob(grid, rng, FOREST, 2.0, 4.0)
     for _ in range(max(2, area // 240)):
         _paint_blob(grid, rng, WATER, 1.5, 3.0)
+    if width >= 32 and height >= 20:
+        _paint_stream(grid, rng)
+    _add_ponds_until_reachable(grid, rng)
     grass = [(x, y) for y in range(height) for x in range(width) if grid[y][x] == GRASS]
     for x, y in rng.sample(grass, min(area // 70, len(grass))):
         grid[y][x] = ROCK
     return "".join("".join(row) for row in grid)
+
+
+def _paint_stream(grid: list[list[str]], rng: random.Random) -> None:
+    """A stream that wanders from one side to the other, with a few fords so nobody is cut off."""
+    height, width = len(grid), len(grid[0])
+    across_x = rng.random() < 0.5  # runs west to east, or north to south
+    length, breadth = (width, height) if across_x else (height, width)
+    pos = rng.uniform(0.25, 0.75) * breadth
+    drift = rng.uniform(-0.3, 0.3)
+    fords = set()
+    while len(fords) < RIVER_FORDS:
+        start = rng.randrange(3, length - 3)
+        fords.update((start, start + 1))
+    for step in range(length):
+        drift = max(-0.6, min(0.6, drift + rng.uniform(-0.25, 0.25)))
+        pos = max(2.0, min(breadth - 3.0, pos + drift))
+        if step in fords:
+            continue
+        for offset in (0, 1) if rng.random() < 0.35 else (0,):
+            across = int(round(pos)) + offset
+            x, y = (step, across) if across_x else (across, step)
+            if 0 <= x < width and 0 <= y < height:
+                grid[y][x] = WATER
+
+
+def _water_distance(grid: list[list[str]]):
+    """Chebyshev distance from each tile to the nearest water, or None for every tile if there is no water."""
+    height, width = len(grid), len(grid[0])
+    queue = [(x, y) for y in range(height) for x in range(width) if grid[y][x] == WATER]
+    if not queue:
+        return None
+    dist = {tile: 0 for tile in queue}
+    for x, y in queue:  # a list that grows while we walk it is a breadth-first queue
+        for dx, dy in DIRECTIONS:
+            nx, ny = x + dx, y + dy
+            if 0 <= nx < width and 0 <= ny < height and (nx, ny) not in dist:
+                dist[(nx, ny)] = dist[(x, y)] + 1
+                queue.append((nx, ny))
+    return dist
+
+
+def _add_ponds_until_reachable(grid: list[list[str]], rng: random.Random) -> None:
+    """Put a small pond on the tile farthest from water until every tile is within WATER_REACH of water."""
+    height, width = len(grid), len(grid[0])
+    for _ in range(width * height):
+        dist = _water_distance(grid)
+        if dist is None:
+            far = (rng.randrange(width), rng.randrange(height))
+        else:
+            far, far_d = max(dist.items(), key=lambda item: (item[1], -item[0][1], -item[0][0]))
+            if far_d <= WATER_REACH:
+                return
+        for y in range(height):
+            for x in range(width):
+                wobble = rng.uniform(0.6, 1.0)
+                if (x - far[0]) ** 2 + (1.25 * (y - far[1])) ** 2 <= (2.2 * wobble) ** 2:
+                    grid[y][x] = WATER
 
 
 def _paint_blob(grid: list[list[str]], rng: random.Random, terrain: str,

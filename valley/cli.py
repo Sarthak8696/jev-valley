@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from valley import __version__
+from valley.world import DEFAULT_HEIGHT, DEFAULT_MAX_CREATURES, DEFAULT_WIDTH
 
 VIEWER_PATH = Path(__file__).resolve().parent.parent / "viewer" / "index.html"
 CACHE_DIR = ".valley-cache"
@@ -20,7 +21,7 @@ def _size(text: str) -> tuple[int, int]:
         width, height = text.lower().split("x")
         return int(width), int(height)
     except ValueError:
-        raise argparse.ArgumentTypeError(f"size must look like 28x18, not {text!r}") from None
+        raise argparse.ArgumentTypeError(f"size must look like 40x26, not {text!r}") from None
 
 
 def _add_model_settings(parser: argparse.ArgumentParser) -> None:
@@ -34,8 +35,8 @@ def _add_model_settings(parser: argparse.ArgumentParser) -> None:
 def _add_run_arguments(parser: argparse.ArgumentParser, log_default: bool) -> None:
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--days", type=int, default=30)
-    parser.add_argument("--size", type=_size, default=(28, 18), help="map size, such as 28x18")
-    parser.add_argument("--max-creatures", type=int, default=50)
+    parser.add_argument("--size", type=_size, default=(DEFAULT_WIDTH, DEFAULT_HEIGHT), help=f"map size, such as {DEFAULT_WIDTH}x{DEFAULT_HEIGHT}")
+    parser.add_argument("--max-creatures", type=int, default=DEFAULT_MAX_CREATURES)
     parser.add_argument("--brain", default="jev",
                         help="jev (the default, needs TYPESAFE_API_KEY), system-one@URL#MODEL, or the offline "
                              "baselines rules and random")

@@ -42,8 +42,8 @@ def test_the_document_has_the_documented_shape():
                 "hesitate_below", "actions", "version"):
         assert key in meta
     assert meta["run_id"] == "test-rules-seed7" and meta["seed"] == 7 and meta["steps"] == 72
-    assert meta["start_hour"] == 6 and (meta["width"], meta["height"]) == (28, 18)
-    assert len(meta["tiles"]) == 18 and all(len(row) == 28 for row in meta["tiles"])
+    assert meta["start_hour"] == 6 and (meta["width"], meta["height"]) == (40, 26)
+    assert len(meta["tiles"]) == 26 and all(len(row) == 40 for row in meta["tiles"])
     assert meta["brains"] == {"rabbit": "rules", "deer": "rules", "wolf": "rules"}
     assert meta["hesitate_below"] is None
     assert meta["actions"]["wolf"][0] == "hunt" and meta["actions"]["rabbit"][0] == "eat"

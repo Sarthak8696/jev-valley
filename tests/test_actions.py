@@ -292,7 +292,7 @@ def test_explore_follows_its_heading_and_picks_a_new_one_when_blocked():
 
 def test_hunt_catches_prey_within_one_tile_after_moving():
     wolf = make_creature("wolf", 5, 5, cid="w1", name="Ash", energy=20)
-    rabbit = make_creature("rabbit", 7, 5, cid="r1", name="Pip")
+    rabbit = make_creature("rabbit", 7, 5, cid="r1", name="Pip", energy=15)  # half energy: neither weak nor strong
     sim = scene([wolf, rabbit], roll=0.3)
     sim.world.food[sim.world.index(7, 5)] = 0
     act(sim, wolf, "hunt")
@@ -331,7 +331,7 @@ def test_a_missed_catch_is_remembered_by_both():
 def test_no_catch_is_tried_when_the_wolf_ends_more_than_one_tile_away():
     wolf = make_creature("wolf", 2, 5, cid="w1")
     rabbit = make_creature("rabbit", 8, 5, cid="r1")
-    sim = scene([wolf, rabbit], roll=0.0)
+    sim = scene([wolf, rabbit], roll=0.5)  # 0.5 is above the chance of losing the trail
     act(sim, wolf, "hunt")
     assert (wolf.x, wolf.y) == (4, 5)
     assert rabbit.alive and sim.events == []
@@ -361,11 +361,44 @@ def test_catch_chances_are_adjusted_for_hiding_and_fleeing(species, prey_action,
         if terrain_row:
             rows[1] = terrain_row
         wolf = make_creature("wolf", 0, 1, cid="w1")
-        prey = make_creature(species, 1, 1, cid="p1")
+        prey = make_creature(species, 1, 1, cid="p1", energy=SPECIES[species].max_energy / 2)  # half energy: factor 1
         prey.executed = prey_action
         sim = scene([wolf, prey], rows=rows, roll=roll)
         act(sim, wolf, "hunt")
         return not prey.alive
+
+    assert attempt(chance - 0.001) is True
+    assert attempt(chance + 0.001) is False
+
+
+def test_a_hunting_wolf_can_lose_a_prey_that_is_still_far_off():
+    wolf = make_creature("wolf", 2, 5, cid="w1", heading=(1, 0))
+    rabbit = make_creature("rabbit", 8, 5, cid="r1")
+    sim = scene([wolf, rabbit], roll=0.1)  # below the 40% chance of losing the trail
+    act(sim, wolf, "hunt")
+    assert wolf.x == 2 and len(wolf.path) == 1  # it wandered one step instead of closing in on the rabbit
+    assert wolf.memory == ["Day 1, 6 am: lost the trail of " + rabbit.name + " the rabbit"]
+
+
+def test_a_wolf_close_behind_its_prey_never_loses_the_trail():
+    wolf = make_creature("wolf", 5, 5, cid="w1")
+    rabbit = make_creature("rabbit", 7, 5, cid="r1", energy=15)
+    sim = scene([wolf, rabbit], roll=0.0)  # the lowest roll there is
+    act(sim, wolf, "hunt")
+    assert (wolf.x, wolf.y) == (6, 5) and not rabbit.alive
+
+
+@pytest.mark.parametrize("energy_share, factor", [(0.0, 1.5), (0.5, 1.0), (1.0, 0.5)])
+def test_weak_prey_is_easier_to_catch_and_strong_prey_harder(energy_share, factor):
+    chance = SPECIES["wolf"].catch_chance["rabbit"] * factor
+
+    def attempt(roll):
+        wolf = make_creature("wolf", 0, 1, cid="w1")
+        rabbit = make_creature("rabbit", 1, 1, cid="r1", energy=SPECIES["rabbit"].max_energy * energy_share)
+        rabbit.executed = "rest"
+        sim = scene([wolf, rabbit], rows=open_rows(11, 3), roll=roll)
+        act(sim, wolf, "hunt")
+        return not rabbit.alive
 
     assert attempt(chance - 0.001) is True
     assert attempt(chance + 0.001) is False

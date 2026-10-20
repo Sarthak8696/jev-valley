@@ -1,7 +1,9 @@
 """Checks the balance targets of spec 5.5 for the offline brains.
 
 The targets keep the `rules` baseline good but not perfect, so a better brain has
-room to do better and a worse one can visibly do worse.
+room to do better and a worse one can visibly do worse. Target 1 was raised from
+5 to 8 of 10 seeds, and target 5 added, when the ecosystem was redesigned: see the
+Decisions log of docs/build-spec.md.
 """
 
 import json
@@ -16,7 +18,7 @@ from valley.world import DEFAULT_MAX_CREATURES
 
 BENCH_SEEDS = (3, 7, 11, 19, 23, 42, 57, 64, 88, 101)
 
-MIN_RULES_ALL_ALIVE = 5  # of 10 seeds
+MIN_RULES_ALL_ALIVE = 8  # of 10 seeds
 MIN_RULES_BOOM_BUST = 3
 MIN_RANDOM_EXTINCTIONS = 7
 BOOM_BUST_DROP = 0.30
@@ -56,17 +58,19 @@ def analyse(run: dict, max_creatures: int = DEFAULT_MAX_CREATURES) -> dict:
         "all_alive": steps == run["days"] * 24 and all(series[key][-1] > 0 for key in SPECIES_ORDER),
         "boom_bust": rabbit_boom_bust(series["rabbit"]),
         "any_extinct": any(min(series[key]) == 0 for key in SPECIES_ORDER),
+        "wolves_alone": series["wolf"][-1] > 0 and series["rabbit"][-1] + series["deer"][-1] == 0,
         "steps_at_cap": {key: sum(1 for n in series[key] if n >= caps[key]) for key in SPECIES_ORDER},
     }
 
 
 def check_targets(rules: list[dict], random_runs: list[dict]) -> list[dict]:
-    """Evaluate the four targets from analysed runs. Each result has `passed`, `count` and `text`."""
+    """Evaluate the five targets from analysed runs. Each result has `passed`, `count` and `text`."""
     n_rules, n_random = len(rules), len(random_runs)
     all_alive = sum(r["all_alive"] for r in rules)
     boom_bust = sum(r["boom_bust"] for r in rules)
     extinctions = sum(r["any_extinct"] for r in random_runs)
     over_cap = [r["seed"] for r in rules if any(n > r["steps"] / 2 for n in r["steps_at_cap"].values())]
+    alone = [r["seed"] for r in rules if r.get("wolves_alone")]
     return [
         {"target": 1, "passed": all_alive >= MIN_RULES_ALL_ALIVE, "count": all_alive,
          "text": f"rules: all three species alive at the end on at least {MIN_RULES_ALL_ALIVE} of {n_rules} seeds"},
@@ -77,6 +81,9 @@ def check_targets(rules: list[dict], random_runs: list[dict]) -> list[dict]:
         {"target": 4, "passed": not over_cap, "count": len(over_cap),
          "text": "rules: no species sits at its cap for more than half the month on any seed"
                  + (f" (over: seeds {', '.join(map(str, over_cap))})" if over_cap else "")},
+        {"target": 5, "passed": not alone, "count": len(alone),
+         "text": "rules: wolves are never the only species left at the end"
+                 + (f" (alone: seeds {', '.join(map(str, alone))})" if alone else "")},
     ]
 
 

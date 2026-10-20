@@ -89,9 +89,9 @@ def test_benchmark_runs_never_use_the_cache():
 def test_the_estimate_is_starting_creatures_times_steps_times_one_and_a_half():
     specs = plan_runs("survival", [7], 30, brains=["jev"])
     est = estimate(specs)
-    assert est["decisions"] == 26 * 720 * 1.5 == 28080
-    assert est["requests"] == 1755 and est["batch"] == 16 and est["runs"] == 1
-    assert estimate(plan_runs("survival", [7, 3], 30, brains=["jev"], batch=10))["requests"] == 5616
+    assert est["decisions"] == 39 * 720 * 1.5 == 42120
+    assert est["requests"] == 2633 and est["batch"] == 16 and est["runs"] == 1
+    assert estimate(plan_runs("survival", [7, 3], 30, brains=["jev"], batch=10))["requests"] == 8424
 
 
 def test_a_hesitation_off_run_is_the_same_configuration_as_survival():

@@ -23,8 +23,8 @@ def start_signature(sim):
 def test_starting_creatures_match_the_spec():
     sim = random_sim(7)
     by_species = {s: [c for c in sim.creatures.values() if c.species == s] for s in SPECIES}
-    assert {s: len(v) for s, v in by_species.items()} == {"rabbit": 16, "deer": 7, "wolf": 3}
-    assert [c.id for c in by_species["rabbit"]] == [f"r{i}" for i in range(1, 17)]
+    assert {s: len(v) for s, v in by_species.items()} == {"rabbit": 24, "deer": 10, "wolf": 5}
+    assert [c.id for c in by_species["rabbit"]] == [f"r{i}" for i in range(1, 25)]
     tiles = [(c.x, c.y) for c in sim.creatures.values()]
     assert len(tiles) == len(set(tiles))
     for c in sim.creatures.values():
@@ -278,8 +278,9 @@ def test_summary_reports_timing_and_brain_totals():
 def test_the_species_cap_is_exact_for_the_default_cap():
     from valley.species import species_cap
     assert species_cap("wolf", 50) == 7.0 and species_cap("rabbit", 50) == 30.0 and species_cap("deer", 50) == 15.0
+    assert species_cap("wolf", 75) == 10.5
     wolves = [make_creature("wolf", i, 0, cid=f"w{i + 1}") for i in range(7)]
-    sim = make_sim(world_from_rows(open_rows(12, 3)), wolves)
+    sim = make_sim(world_from_rows(open_rows(12, 3)), wolves, max_creatures=50)
     assert sim.cap_allows("wolf") is False  # seven wolves are at the cap of 7
     sim.living.pop()
     assert sim.cap_allows("wolf") is True
