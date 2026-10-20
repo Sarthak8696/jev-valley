@@ -213,7 +213,7 @@ def blunders_chart(path: str, rates: dict, title: str = "Blunder rate") -> None:
         plt.close(fig)
         return
     top = max(max(v) for v in rates.values() if v) * 100
-    ymax = max(top * 1.25, 1.0)
+    ymax = max(top * 1.3, 1.0)
     ax.set_xlim(-0.6, len(groups) - 0.4)
     ax.set_ylim(0, ymax)
     px_x = (len(groups) + 0.2) / (plot_w * width)
@@ -226,9 +226,10 @@ def blunders_chart(path: str, rates: dict, title: str = "Blunder rate") -> None:
         mean = sum(values) / len(values)
         _rounded_bar(ax, i, mean, bar_w, style.colors[group], px_x, px_y)
         spread = [(j - (len(values) - 1) / 2) * 7 * px_x for j in range(len(values))]
-        ax.plot([i + s for s in spread], values, linestyle="none", marker="o", markersize=MARKER_SIZE * 0.8,
+        ax.plot([i + s for s in spread], values, linestyle="none", marker="o", markersize=MARKER_SIZE,
                 markerfacecolor=INK_SECONDARY, markeredgecolor=SURFACE, markeredgewidth=2 * PX, zorder=5)
-        ax.text(i, mean + 6 * px_y, f"{mean:.1f}%", ha="center", va="bottom", color=INK, fontsize=9.5, zorder=6)
+        ax.text(i, max(max(values), mean) + 12 * px_y, f"{mean:.1f}%", ha="center", va="bottom", color=INK,
+                fontsize=9.5, zorder=6)
     ax.set_xticks(range(len(groups)))
     ax.set_xticklabels([_pretty(g) for g in groups], color=INK_SECONDARY, fontsize=9.5)
     ax.yaxis.set_major_formatter(lambda v, _: f"{v:g}%")
