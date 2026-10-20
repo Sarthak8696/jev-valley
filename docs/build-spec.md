@@ -905,6 +905,12 @@ Record every choice not covered above, and every change to a value in this docum
 | 2026-10-20 | Target 1 passes at its minimum: all three species are alive at the end on exactly 5 of 10 seeds. On the 40 held-out seeds the figure is 16 of 40. | Reported so the margin is not overstated. |
 | 2026-10-20 | `tests/test_rules.py` and `tests/test_tuning.py` are added. `tune --thresholds RUN_DIR...` is added to fix the hesitation thresholds from smoke runs. | Not in the 12 test list; the author's threshold rule needs a command. |
 | 2026-10-20 | The tests that name tuned values read them from the species table or pin them in `tests/test_species.py`. | A tuning change should change one place. |
+| 2026-10-20 | An answer is accepted only if its `type` is `choice`, its `choice` is an option, its `probabilities` are a non-empty map of options to non-negative numbers, and its `confidence` is a number. Confidence outside 0 to 1 is clamped. | 7.3 says to take probabilities and confidence from the answer but not what a valid one looks like. |
+| 2026-10-20 | The hard timeout is the socket timeout of each attempt, not a deadline across a slow response. A retry waits 0.5 s, then 1 s, or the server's `Retry-After` up to 10 s. Request latency in the metrics is that of the final attempt. | The standard library gives socket timeouts. |
+| 2026-10-20 | Each `requests.jsonl` line also has `attempts`. Responses that are not JSON are logged as text, cut to 2,000 characters. | Retries are counted in the metrics, so the log should show them. |
+| 2026-10-20 | `--cache` stores responses by SHA-256 of the request body in `.valley-cache/<brain>.jsonl`. It exists only for `run` and `live`. | The author approved an off-by-default cache that bench never uses. |
+| 2026-10-20 | Servers given as `system-one@URL#MODEL` read an optional key from `SYSTEM_ONE_API_KEY`. The Jev key is never sent to them. | 7.3 names no variable for them, and a key must not go to an unrelated server. |
+| 2026-10-20 | Every string written to a log or error has the API key replaced by `[redacted]`. | Ground rule 8, enforced even if a server echoes the key. |
 
 ## Phase 5 tuning record
 
