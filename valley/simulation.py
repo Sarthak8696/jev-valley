@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from valley import actions
 from valley.creatures import HESITATED, Creature
 from valley.perception import build_request
-from valley.species import ID_PREFIX, PERSONALITIES, SPECIES, SPECIES_ORDER, plural
+from valley.species import ID_PREFIX, PERSONALITIES, SPECIES, SPECIES_ORDER, plural, species_cap
 from valley.world import (
     DEFAULT_HEIGHT, DEFAULT_MAX_CREATURES, DEFAULT_WIDTH, DIRECTIONS, World, derive_seed,
 )
@@ -56,6 +56,7 @@ class Simulation:
     # -- creatures --------------------------------------------------------
 
     def register(self, creature: Creature) -> None:
+        creature.start_age = creature.age
         self.creatures[creature.id] = creature
         self.living.append(creature)
         self.occupied[(creature.x, creature.y)] = creature
@@ -104,7 +105,7 @@ class Simulation:
     def cap_allows(self, species: str) -> bool:
         """A species cannot breed at or above its share of the cap, or when the total is at the cap."""
         counts = self.counts()
-        return (counts[species] < self.max_creatures * SPECIES[species].cap_share
+        return (counts[species] < species_cap(species, self.max_creatures)
                 and sum(counts.values()) < self.max_creatures)
 
     def kill(self, creature: Creature, cause: str):

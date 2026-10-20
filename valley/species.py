@@ -1,8 +1,9 @@
 """The three species, their action menus and the personalities.
 
 Section 5.3 of the spec lists the fixed values. Section 5.4 lists the tunable
-values: they are the starting values and phase 5 may change them, with every
-change recorded in the Decisions log.
+values, which phase 5 tuned until the balance targets of 5.5 passed. The starting
+value of every tunable that changed, and the reason, is in the Decisions log of
+docs/build-spec.md. Changing any value means re-running every experiment.
 """
 
 from dataclasses import dataclass, field
@@ -88,9 +89,9 @@ SPECIES = {
         names=("Clover", "Thistle", "Pip", "Bramble", "Hazel", "Juniper", "Moss", "Sorrel",
                "Fern", "Basil", "Nettle", "Poppy", "Tansy", "Yarrow"),
         actions=PREY_ACTIONS,
-        max_energy=30, max_hydration=30, energy_loss=0.45, hydration_loss=0.6,
-        adult_age=96, breed_min_energy=16, breed_cost=7, breed_cooldown=72,
-        plant_energy=5, meat_value=14,
+        max_energy=30, max_hydration=30, energy_loss=0.43, hydration_loss=0.47,
+        adult_age=96, breed_min_energy=16, breed_cost=7.9, breed_cooldown=84,
+        plant_energy=4.3, meat_value=22.7,
     ),
     DEER: Species(
         key=DEER, diet="plants", vision=6, litter=(1, 2), flee_speed=2, hunt_speed=0,
@@ -98,9 +99,9 @@ SPECIES = {
         names=("Birch", "Aspen", "Rowan", "Willow", "Alder", "Larch", "Cedar", "Linden",
                "Holly", "Elm"),
         actions=PREY_ACTIONS,
-        max_energy=50, max_hydration=45, energy_loss=0.55, hydration_loss=0.7,
-        adult_age=240, breed_min_energy=26, breed_cost=12, breed_cooldown=168,
-        plant_energy=6, meat_value=34,
+        max_energy=50, max_hydration=45, energy_loss=0.6, hydration_loss=0.41,
+        adult_age=240, breed_min_energy=26, breed_cost=14.0, breed_cooldown=168,
+        plant_energy=6.9, meat_value=39.4,
     ),
     WOLF: Species(
         key=WOLF, diet="meat", vision=6, litter=(1, 2), flee_speed=0, hunt_speed=2,
@@ -108,10 +109,10 @@ SPECIES = {
         names=("Ash", "Ember", "Flint", "Slate", "Cinder", "Storm", "Shade", "Grit", "Frost",
                "Smoke"),
         actions=WOLF_ACTIONS,
-        max_energy=60, max_hydration=45, energy_loss=0.5, hydration_loss=0.6,
-        adult_age=360, breed_min_energy=44, breed_cost=22, breed_cooldown=336,
-        plant_energy=0, meat_value=20,
-        catch_chance={RABBIT: 0.45, DEER: 0.22},
+        max_energy=60, max_hydration=45, energy_loss=0.57, hydration_loss=0.48,
+        adult_age=360, breed_min_energy=44, breed_cost=23.1, breed_cooldown=412,
+        plant_energy=0, meat_value=18.0,
+        catch_chance={RABBIT: 0.46, DEER: 0.16},
     ),
 }
 
@@ -126,3 +127,8 @@ def action_menu(species_key: str) -> dict:
 
 def plural(species_key: str) -> str:
     return PLURALS[species_key]
+
+
+def species_cap(species_key: str, max_creatures: int) -> float:
+    """A species' share of the creature cap. Rounded so that 50 * 0.14 is exactly 7, not 7.000000000000001."""
+    return round(max_creatures * SPECIES[species_key].cap_share, 6)

@@ -21,11 +21,11 @@ DIRECTIONS = [(0, -1), (1, -1), (1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -
 DEFAULT_WIDTH = 28
 DEFAULT_HEIGHT = 18
 
-# Tunable world values (spec 5.4). Changes are recorded in the Decisions log.
-GRASS_REGROWTH = 0.015
-FOREST_REGROWTH = 0.010
-CARCASS_ROT = 0.3
-CARCASS_LIFETIME = 72
+# Tunable world values (spec 5.4), tuned in phase 5. Starting values and reasons are in the Decisions log.
+GRASS_REGROWTH = 0.0125
+FOREST_REGROWTH = 0.0109
+CARCASS_ROT = 0.29
+CARCASS_LIFETIME = 48
 DEFAULT_MAX_CREATURES = 50
 
 MAX_MAP_ATTEMPTS = 500

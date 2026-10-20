@@ -112,7 +112,7 @@ def test_starvation_leaves_a_smaller_carcass_and_an_event():
     frame = sim.step()
     assert rabbit.cause == "starved" and rabbit.died == 1
     assert frame["events"] == ["Pip the rabbit starved"]
-    assert sim.world.carcasses[0].meat == pytest.approx(14 * 0.4)  # made after the hour's rot, so it is still whole
+    assert sim.world.carcasses[0].meat == pytest.approx(rabbit.spec.meat_value * 0.4)  # made after the hour's rot, so it is still whole
     assert frame["pop"]["rabbit"] == 0
     assert [r[0] for r in frame["agents"]] == ["r1"]  # shown on the hour it died
 
@@ -123,7 +123,7 @@ def test_thirst_is_checked_after_starvation_and_leaves_more_meat():
     frame = sim.step()
     assert rabbit.cause == "thirst"
     assert frame["events"] == ["Pip the rabbit died of thirst"]
-    assert sim.world.carcasses[0].meat == pytest.approx(14 * 0.6)
+    assert sim.world.carcasses[0].meat == pytest.approx(rabbit.spec.meat_value * 0.6)
 
 
 def test_a_creature_both_starving_and_parched_is_recorded_as_starved():
@@ -188,7 +188,7 @@ def test_hesitation_freezes_a_low_confidence_creature_and_keeps_the_choice():
     assert row[3] == "explore" and row[5] == 1 and row[4] == 30
     assert rabbit.memory[-1].endswith("hesitated")
     assert rabbit.notes == []  # hesitation is not kept as a replay note
-    assert rabbit.energy == pytest.approx(30 - 0.5 * 0.45)
+    assert rabbit.energy == pytest.approx(30 - 0.5 * rabbit.spec.energy_loss)
 
 
 def test_a_confident_creature_does_not_hesitate():
@@ -254,3 +254,13 @@ def test_summary_reports_timing_and_brain_totals():
     assert summary["steps_run"] == 24
     assert summary["hour_seconds"]["p50"] is not None
     assert summary["brain_totals"]["random"]["decisions"] > 0
+
+
+def test_the_species_cap_is_exact_for_the_default_cap():
+    from valley.species import species_cap
+    assert species_cap("wolf", 50) == 7.0 and species_cap("rabbit", 50) == 30.0 and species_cap("deer", 50) == 15.0
+    wolves = [make_creature("wolf", i, 0, cid=f"w{i + 1}") for i in range(7)]
+    sim = make_sim(world_from_rows(open_rows(12, 3)), wolves)
+    assert sim.cap_allows("wolf") is False  # seven wolves are at the cap of 7
+    sim.living.pop()
+    assert sim.cap_allows("wolf") is True

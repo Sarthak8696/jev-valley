@@ -891,3 +891,49 @@ Record every choice not covered above, and every change to a value in this docum
 | 2026-10-20 | Signals gain `species` and `water_known` (water visible or remembered). The `rules` brain and the blunder rules need them. | 6.3 lists no way to read the species or remembered water. |
 | 2026-10-20 | "Previous action" (hiding visibility, `hunting` text) means the previous executed action, so a creature that froze did not hunt or hide. `Brain.decide` takes an optional `step` for logging, and `Decision.latency_ms` defaults to `None`. | A frozen animal did not do what it chose. `requests.jsonl` needs the step. |
 | 2026-10-20 | Nearest-thing ties break by Chebyshev distance, then straight-line distance, then row-major tile order or creature id, without using any random stream. | Keeps views and lookups deterministic and independent of `event_rng`. |
+| 2026-10-20 | Upkeep is charged after a creature's action finishes, so an animal that eats still pays that hour's metabolism. A creature eaten earlier in the hour pays nothing. | 5.9 puts upkeep inside the action step without saying whether before or after. |
+| 2026-10-20 | Hesitation, the catch modifiers and the `hunting` and `hide` visibility all use the executed action, so a frozen animal counts as having rested. | A frozen animal did not do what it chose. |
+| 2026-10-20 | `hide` with no visible forest stays put. `seek_mate` with no visible partner explores. `eat` and `hide` look for the nearest tile that no other creature is standing on. | The spec is silent. Stepping toward an occupied tile can never succeed. |
+| 2026-10-20 | A litter is also limited by the room left under the total cap. The species share is checked only before breeding, so a species can overshoot its share by up to a litter minus one. | The spec checks the share only as a precondition. |
+| 2026-10-20 | A carcass eaten down to nothing is removed at once and the plants on its tile grow back to their maximum, like a rotted one. | 5.2 says a carcass is removed when its meat reaches 0. |
+| 2026-10-20 | A species' cap is `cap x share` rounded to 6 decimals, because `50 x 0.14` is `7.000000000000001` in floating point and seven wolves would not have counted as at the cap. | A bug caught by a test. |
+| 2026-10-20 | A creature that died during an hour still has a row in that hour's frame. Newborns and animals that made no decision have a `null` action, confidence -1 and no probabilities. | The viewer needs the death hour to animate it, and a newborn has no decision yet. |
+| 2026-10-20 | When species use different brains, the brains decide in parallel threads, and the hour waits for all of them. | Keeps a mixed run as fast as its slowest brain. |
+| 2026-10-20 | The rules brain scores `flee` as -1.0 when no wolf is visible. The `cautious` bonus on `hide` applies with or without a wolf in sight. `follow_group` scores 0 with no group visible, and the `loyal` bonus applies only when a group is visible. `drink` treats remembered water like visible water. | 7.4 leaves these unspecified or ambiguous. |
+| 2026-10-20 | Balance target definitions: all species alive means the run lasted the full month with every species above 0. A rabbit boom and bust means the rabbit count rose above its start and later fell to 70% or less of its peak (a crash to nothing counts). A species sits at its cap when its count is at or above `cap x share`. A species dies out when its count reaches 0 at any hour. | 5.5 states the targets but not these measurements. |
+| 2026-10-20 | Phase 5 values were chosen by random search over the 5.4 values only. About 800 configurations were scored on the four targets using the ten benchmark seeds. The earliest searches also let the creature cap vary, but the values chosen come from a search that held the cap at 50, so the viewer's 50-animal target still applies. Configurations that passed were rechecked on 20 held-out seeds, and the final, rounded values on 40 (seeds 200 to 239). See the tuning record below. | 5.5 asks for tuning until the targets pass, and the author asked that only 5.4 be touched. The held-out check guards against fitting the ten seeds. |
+| 2026-10-20 | Target 1 passes at its minimum: all three species are alive at the end on exactly 5 of 10 seeds. On the 40 held-out seeds the figure is 16 of 40. | Reported so the margin is not overstated. |
+| 2026-10-20 | `tests/test_rules.py` and `tests/test_tuning.py` are added. `tune --thresholds RUN_DIR...` is added to fix the hesitation thresholds from smoke runs. | Not in the 12 test list; the author's threshold rule needs a command. |
+| 2026-10-20 | The tests that name tuned values read them from the species table or pin them in `tests/test_species.py`. | A tuning change should change one place. |
+
+## Phase 5 tuning record
+
+The `rules` baseline was tuned by changing only the 5.4 values. `python -m valley tune --check` passes all four targets with these values: all species alive at the end on 5 of 10 seeds, a rabbit boom and bust on 10 of 10, `random` losing a species on 10 of 10, and no species at its cap for more than half the month on any seed. On 40 held-out seeds (200 to 239) the same values gave all species alive on 16, a rabbit boom and bust on 38 and a species at its cap for over half the month on 2.
+
+| Value | Species | Starting | Final |
+|---|---|---|---|
+| Energy lost per hour | rabbit | 0.45 | 0.43 |
+| Energy lost per hour | deer | 0.55 | 0.6 |
+| Energy lost per hour | wolf | 0.5 | 0.57 |
+| Hydration lost per hour | rabbit | 0.6 | 0.47 |
+| Hydration lost per hour | deer | 0.7 | 0.41 |
+| Hydration lost per hour | wolf | 0.6 | 0.48 |
+| Energy cost of breeding | rabbit | 7 | 7.9 |
+| Energy cost of breeding | deer | 12 | 14.0 |
+| Energy cost of breeding | wolf | 22 | 23.1 |
+| Breeding cooldown (hours) | rabbit | 72 | 84 |
+| Breeding cooldown (hours) | deer | 168 | 168 |
+| Breeding cooldown (hours) | wolf | 336 | 412 |
+| Energy per plant unit eaten | rabbit | 5 | 4.3 |
+| Energy per plant unit eaten | deer | 6 | 6.9 |
+| Meat value | rabbit | 14 | 22.7 |
+| Meat value | deer | 34 | 39.4 |
+| Meat value | wolf | 20 | 18.0 |
+| Catch chance on rabbits | wolf | 0.45 | 0.46 |
+| Catch chance on deer | wolf | 0.22 | 0.16 |
+| Grass regrowth chance per hour | world | 0.015 | 0.0125 |
+| Forest regrowth chance per hour | world | 0.010 | 0.0109 |
+| Carcass rot per hour | world | 0.3 | 0.29 |
+| Carcass lifetime (hours) | world | 72 | 48 |
+
+Unchanged: max energy, max hydration, adult age, minimum energy to breed, and the creature cap of 50.

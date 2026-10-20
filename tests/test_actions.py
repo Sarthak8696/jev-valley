@@ -33,7 +33,7 @@ def test_eat_takes_a_plant_and_gains_energy():
     sim = scene([rabbit], plants={(5, 5): 2})
     act(sim, rabbit, "eat")
     assert sim.world.plants(5, 5) == 1
-    assert rabbit.energy == pytest.approx(10 + 5 - upkeep(rabbit, "eat"))
+    assert rabbit.energy == pytest.approx(10 + rabbit.spec.plant_energy - upkeep(rabbit, "eat"))
     assert rabbit.path == []
 
 
@@ -106,7 +106,7 @@ def test_rest_stays_and_costs_half():
     sim = scene([rabbit])
     act(sim, rabbit, "rest")
     assert (rabbit.x, rabbit.y) == (5, 5)
-    assert rabbit.energy == pytest.approx(20 - 0.5 * 0.45)
+    assert rabbit.energy == pytest.approx(20 - upkeep(rabbit, "rest"))
 
 
 # -- fleeing and hiding --------------------------------------------------------
@@ -119,7 +119,7 @@ def test_flee_runs_two_steps_away_from_the_wolf():
     assert len(rabbit.path) == 2
     from valley.world import chebyshev
     assert chebyshev(rabbit.x, rabbit.y, 4, 5) == 3
-    assert rabbit.energy == pytest.approx(30 - 1.6 * 0.45)
+    assert rabbit.energy == pytest.approx(30 - upkeep(rabbit, "flee"))
 
 
 def test_flee_with_no_wolf_visible_explores():
@@ -153,7 +153,7 @@ def test_hide_moves_toward_forest_and_stays_once_there():
     assert (rabbit.x, rabbit.y) == (7, 5)
     act(sim, rabbit, "hide")
     assert (rabbit.x, rabbit.y) == (7, 5) and rabbit.path == []
-    assert rabbit.energy == pytest.approx(30 - 3 * 0.8 * 0.45)
+    assert rabbit.energy == pytest.approx(30 - 3 * upkeep(rabbit, "hide"))
 
 
 def test_hide_skips_forest_that_is_occupied():
@@ -178,9 +178,9 @@ def test_seek_mate_has_young_next_to_the_seeker():
     assert baby.energy == pytest.approx(15) and baby.hydration == pytest.approx(24)
     assert abs(baby.x - 5) <= 1 and abs(baby.y - 5) <= 1 and (baby.x, baby.y) != (5, 5)
     for parent in (a, b):
-        assert parent.cooldown == 72
-    assert a.energy == pytest.approx(30 - 7 - upkeep(a, "seek_mate"))
-    assert b.energy == pytest.approx(30 - 7)
+        assert parent.cooldown == a.spec.breed_cooldown
+    assert a.energy == pytest.approx(30 - a.spec.breed_cost - upkeep(a, "seek_mate"))
+    assert b.energy == pytest.approx(30 - a.spec.breed_cost)
     assert a.memory == ["Day 1, 6 am: had 1 young with Pip"]
     assert b.memory == ["Day 1, 6 am: had 1 young with Clover"]
     assert sim.events == ["Clover and Pip the rabbits had 1 young"]
@@ -299,7 +299,7 @@ def test_hunt_catches_prey_within_one_tile_after_moving():
     assert (wolf.x, wolf.y) == (6, 5)
     assert not rabbit.alive and rabbit.cause == "eaten"
     assert sim.events == ["Ash the wolf caught Pip the rabbit"]
-    assert wolf.energy == pytest.approx(20 + 14 - upkeep(wolf, "hunt"))
+    assert wolf.energy == pytest.approx(20 + SPECIES["rabbit"].meat_value - upkeep(wolf, "hunt"))
     assert wolf.memory == ["Day 1, 6 am: caught Pip the rabbit"]
     assert sim.world.carcasses == []  # eaten down to nothing
     assert sim.world.plants(7, 5) == PLANT_MAX["."]  # and the plants grew back
@@ -313,7 +313,7 @@ def test_hunt_leaves_a_carcass_when_the_wolf_is_nearly_full():
     act(sim, wolf, "hunt")
     assert not deer.alive
     assert len(sim.world.carcasses) == 1
-    assert sim.world.carcasses[0].meat == pytest.approx(34 - 5)
+    assert sim.world.carcasses[0].meat == pytest.approx(SPECIES["deer"].meat_value - 5)
     assert wolf.energy == pytest.approx(60 - upkeep(wolf, "hunt"))
 
 
@@ -344,25 +344,31 @@ def test_hunt_with_no_prey_in_sight_explores():
     assert wolf.path == [(6, 5)]
 
 
-@pytest.mark.parametrize("species, roll, prey_action, terrain_row, caught", [
-    ("deer", 0.20, "rest", None, True),            # 0.22 base
-    ("deer", 0.20, "hide", ".T.........", False),  # 0.11 hiding in forest
-    ("deer", 0.20, "hide", None, True),            # hiding on open ground does not help
-    ("deer", 0.20, "flee", None, False),           # 0.154 fleeing
-    ("rabbit", 0.30, "rest", None, True),          # 0.45 base
-    ("rabbit", 0.30, "flee", None, True),          # 0.315 fleeing
-    ("rabbit", 0.30, "hide", ".T.........", False),  # 0.225 hiding in forest
+@pytest.mark.parametrize("species, prey_action, terrain_row, factor", [
+    ("deer", "rest", None, 1.0),
+    ("deer", "hide", ".T.........", 0.5),   # hiding in forest halves the chance
+    ("deer", "hide", None, 1.0),            # hiding on open ground does not help
+    ("deer", "flee", None, 0.7),            # fleeing cuts it to 70%
+    ("rabbit", "rest", None, 1.0),
+    ("rabbit", "flee", None, 0.7),
+    ("rabbit", "hide", ".T.........", 0.5),
 ])
-def test_catch_chances_are_adjusted_for_hiding_and_fleeing(species, roll, prey_action, terrain_row, caught):
-    rows = open_rows(11, 3)
-    if terrain_row:
-        rows[1] = terrain_row
-    wolf = make_creature("wolf", 0, 1, cid="w1")
-    prey = make_creature(species, 1, 1, cid="p1")
-    prey.executed = prey_action
-    sim = scene([wolf, prey], rows=rows, roll=roll)
-    act(sim, wolf, "hunt")
-    assert (not prey.alive) is caught
+def test_catch_chances_are_adjusted_for_hiding_and_fleeing(species, prey_action, terrain_row, factor):
+    chance = SPECIES["wolf"].catch_chance[species] * factor
+
+    def attempt(roll):
+        rows = open_rows(11, 3)
+        if terrain_row:
+            rows[1] = terrain_row
+        wolf = make_creature("wolf", 0, 1, cid="w1")
+        prey = make_creature(species, 1, 1, cid="p1")
+        prey.executed = prey_action
+        sim = scene([wolf, prey], rows=rows, roll=roll)
+        act(sim, wolf, "hunt")
+        return not prey.alive
+
+    assert attempt(chance - 0.001) is True
+    assert attempt(chance + 0.001) is False
 
 
 def test_scavenge_walks_up_and_eats_the_carcass():

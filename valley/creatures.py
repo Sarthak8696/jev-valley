@@ -42,6 +42,7 @@ class Creature:
     died: int | None = None
     cause: str | None = None
     notes: list[list] = field(default_factory=list)  # [[step, text], ...] for the replay
+    start_age: int = 0  # age in hours when it entered the valley, so a replay can show its age at any step
 
     @property
     def spec(self) -> Species:
