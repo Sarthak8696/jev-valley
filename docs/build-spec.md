@@ -930,6 +930,11 @@ Record every choice not covered above, and every change to a value in this docum
 | 2026-10-20 | The mind panel rebuilds a creature's recent memories from its notes plus its hesitation flags, shows its age from `age0`, and the population chart has a table view. | The replay format keeps memories as sparse notes. |
 | 2026-10-20 | Measured in a desktop browser with 45 animals in view: 120 frames per second (the display's limit), 102 draw calls, about 10,000 triangles. The 60 fps target on a mid-range phone has not been tested by the builder. | The author tests on their phone. |
 | 2026-10-20 | `examples/sample-replay.json` is a rules-brain month on seed 57 (about 2 MB), chosen because all three species are alive at the end. | A lively month for the viewer's sample button. |
+| 2026-10-20 | Live stream: a `meta` event first (format, meta, every creature record, frame 0), then one `frame` event per hour, then `end`. Each frame is a replay frame plus `pace`, `new_creatures`, `notes` and `fates`, so the viewer can name newborns and show memories before the run is saved. A viewer that joins late receives the earlier hours first. | 11 says each event is a replay frame plus `pace`; the extras are what the viewer needs. |
+| 2026-10-20 | The valley waits for the first viewer before starting (`--no-wait` skips this). When every viewer has left for 5 seconds the run stops and is saved with what was decided. | Avoids spending API calls nobody watches. |
+| 2026-10-20 | `pace.hours_per_second` is 1 divided by the larger of the pace setting and that hour's compute time. `--pace` (default 1.0) is the least real time per valley hour. | Matches the example in 11. |
+| 2026-10-20 | The viewer animates each live hour over a smoothed estimate of the time between frames, speeds up when it falls behind, and shows a pulsing indicator while it waits for the next hour. | 11 asks that slow hours look slower, not jerky. |
+| 2026-10-20 | `run_one` is split into `prepare_run` and `finish_run`, used by both `run` and `live`. | Live mode shares setup and saving with every other run. |
 
 ## Phase 5 tuning record
 

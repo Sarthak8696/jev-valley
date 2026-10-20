@@ -70,6 +70,14 @@ def build_parser() -> argparse.ArgumentParser:
     _add_run_arguments(run, log_default=False)
     run.add_argument("--quiet", action="store_true", help="no per-day progress")
 
+    live = sub.add_parser("live", help="run a valley and watch it being decided, in your browser")
+    _add_run_arguments(live, log_default=True)
+    live.add_argument("--port", type=int, default=8765)
+    live.add_argument("--pace", type=float, default=1.0, metavar="SECONDS",
+                      help="least real seconds per valley hour (default 1.0); slow decisions slow the clock further")
+    live.add_argument("--open", action="store_true", help="open the viewer in your browser")
+    live.add_argument("--no-wait", action="store_true", help="start the valley before a viewer has connected")
+
     view = sub.add_parser("view", help="write the 3D viewer with a replay embedded")
     view.add_argument("replay", help="a replay.json file")
     view.add_argument("-o", "--output", default="valley.html")
@@ -115,6 +123,22 @@ def _run(args) -> int:
     final = sim.frames[-1]["pop"]
     print(f"{spec.id}: {sim.step_no} hours, final rabbits {final['rabbit']}, deer {final['deer']}, wolves {final['wolf']}")
     print(f"replay: {result['paths']['replay']} ({result['replay_bytes'] / 1024:.0f} KB)")
+    return 0
+
+
+def _live(args) -> int:
+    from valley.live import LiveServer
+    spec = _run_spec(args, "live")
+    out_dir = args.out or os.path.join("runs", spec.id)
+    try:
+        server = LiveServer(spec, out_dir, port=args.port, pace=args.pace, wait_for_viewer=not args.no_wait)
+    except (RuntimeError, ValueError, OSError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+    if args.open:
+        import webbrowser
+        webbrowser.open(server.url)
+    server.run()
     return 0
 
 
@@ -169,7 +193,7 @@ def _tune(args) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    handlers = {"run": _run, "view": _view, "bench": _bench, "tune": _tune}
+    handlers = {"run": _run, "live": _live, "view": _view, "bench": _bench, "tune": _tune}
     if args.command is None:
         parser.print_help()
         return 0

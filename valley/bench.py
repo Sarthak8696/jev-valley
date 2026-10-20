@@ -105,23 +105,23 @@ def build_brains(spec: RunSpec, out_dir: str | None) -> tuple[dict, list]:
     return {key: instances[spec.brains[key]] for key in SPECIES_ORDER}, list(instances.values())
 
 
-def run_one(spec: RunSpec, out_dir: str | None, progress=None) -> dict:
-    """Run one simulation and write `replay.json`, `metrics.json` and, if asked, `requests.jsonl`."""
-    log = None
+def prepare_run(spec: RunSpec, out_dir: str | None):
+    """Build the simulation and its brains, clearing any older request log. Returns (sim, instances)."""
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
         log = os.path.join(out_dir, "requests.jsonl")
         if spec.log_requests and os.path.exists(log):
             os.remove(log)  # a rerun must not append to an older log
     brains, instances = build_brains(spec, out_dir)
-    tally = BlunderTally()
-    try:
-        sim = Simulation(spec.seed, brains, days=spec.days, width=spec.width, height=spec.height,
-                         max_creatures=spec.max_creatures, hesitate_below=spec.hesitate_below, tally=tally)
-        sim.run(on_frame=progress)
-    finally:
-        for brain in instances:
-            brain.close()
+    sim = Simulation(spec.seed, brains, days=spec.days, width=spec.width, height=spec.height,
+                     max_creatures=spec.max_creatures, hesitate_below=spec.hesitate_below, tally=BlunderTally())
+    return sim, instances
+
+
+def finish_run(sim: Simulation, instances: list, spec: RunSpec, out_dir: str | None) -> dict:
+    """Close the brains, then write `replay.json`, `metrics.json` and report where `requests.jsonl` is."""
+    for brain in instances:
+        brain.close()
     replay = build_replay(sim, spec.id)
     metrics = compute_metrics(replay, spec.price_per_mtok)
     replay["summary"]["valid"] = metrics["valid"]
@@ -132,9 +132,21 @@ def run_one(spec: RunSpec, out_dir: str | None, progress=None) -> dict:
         paths["metrics"] = os.path.join(out_dir, "metrics.json")
         with open(paths["metrics"], "w", encoding="utf-8") as handle:
             json.dump(metrics, handle, indent=2)
+        log = os.path.join(out_dir, "requests.jsonl")
         if spec.log_requests and os.path.exists(log):
             paths["requests"] = log
     return {"sim": sim, "replay": replay, "metrics": metrics, "paths": paths, "replay_bytes": replay_bytes}
+
+
+def run_one(spec: RunSpec, out_dir: str | None, progress=None) -> dict:
+    """Run one simulation and write `replay.json`, `metrics.json` and, if asked, `requests.jsonl`."""
+    sim, instances = prepare_run(spec, out_dir)
+    try:
+        sim.run(on_frame=progress)
+    finally:
+        for brain in instances:
+            brain.close()
+    return finish_run(sim, instances, spec, out_dir)
 
 
 def stderr_progress(spec: RunSpec):
