@@ -32,13 +32,29 @@ def test_survival_plan_covers_every_brain_and_seed():
 
 
 def test_the_default_seeds_and_length():
-    assert bench.BENCH_SEEDS == (3, 7, 11, 19, 23, 42, 57, 64, 88, 101)
-    assert plan_runs("survival", bench.BENCH_SEEDS)[0].days == 30
+    assert bench.BENCH_SEEDS == (3, 7, 11, 19, 23, 42, 57, 64, 88, 101)  # the full design, also used by tune --check
+    assert bench.DEFAULT_SEEDS == (3, 7, 11, 19, 23)  # what bench runs unless told otherwise
+    assert plan_runs("survival", bench.DEFAULT_SEEDS)[0].days == 30
+
+
+def test_the_default_set_of_model_runs_is_about_twenty():
+    thresholds = {"jev": {"p10": 0.5, "p25": 0.6}, "laya": {"p10": 0.4, "p25": 0.5}}
+    survival = [s for s in plan_runs("survival", bench.DEFAULT_SEEDS) if s.uses_model]
+    hesitation = [s for s in plan_runs("hesitation", bench.DEFAULT_SEEDS, thresholds=thresholds)
+                  if s.uses_model and s.hesitation_label != "h-off"]  # `off` reuses the survival runs
+    assert len(survival) == 10 and len(hesitation) == 10
+    assert {s.brain_label for s in hesitation} == {"jev"}
+
+
+def test_the_whole_design_is_still_one_flag_away():
+    thresholds = {"jev": {"p10": 0.5, "p25": 0.6}, "laya": {"p10": 0.4, "p25": 0.5}}
+    full = plan_runs("hesitation", bench.BENCH_SEEDS, thresholds=thresholds, brains=["jev", "laya"])
+    assert len(full) == 2 * 3 * 10
 
 
 def test_hesitation_plan_names_the_levels_and_uses_the_fixed_thresholds():
     thresholds = {"jev": {"p10": 0.61, "p25": 0.74}, "laya": {"p10": 0.4, "p25": 0.5}}
-    specs = plan_runs("hesitation", [7], 30, thresholds=thresholds)
+    specs = plan_runs("hesitation", [7], 30, thresholds=thresholds, brains=["jev", "laya"])
     assert [s.id for s in specs] == [
         "hesitation-jev-h-off-seed7", "hesitation-jev-h-p10-seed7", "hesitation-jev-h-p25-seed7",
         "hesitation-laya-h-off-seed7", "hesitation-laya-h-p10-seed7", "hesitation-laya-h-p25-seed7"]
@@ -49,8 +65,10 @@ def test_hesitation_plan_names_the_levels_and_uses_the_fixed_thresholds():
 
 
 def test_hesitation_needs_thresholds_for_every_brain():
+    only_jev = {"jev": {"p10": 0.5, "p25": 0.6}}
     with pytest.raises(KeyError):
-        plan_runs("hesitation", [7], thresholds={"jev": {"p10": 0.5, "p25": 0.6}})
+        plan_runs("hesitation", [7], thresholds=only_jev, brains=["jev", "laya"])
+    assert len(plan_runs("hesitation", [7], thresholds=only_jev)) == 3  # jev alone is the default
     with pytest.raises(FileNotFoundError, match="tune --thresholds"):
         bench.load_thresholds("/no/such/file.json")
 

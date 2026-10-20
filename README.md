@@ -4,7 +4,7 @@ A small simulated valley where every rabbit, deer and wolf decides its next acti
 
 <!-- Add here: a GIF of the 3D viewer and a link to the hosted viewer. The author records the GIF and hosts the page. -->
 
-Play the sample month with nothing installed but Python. The viewer loads Three.js from a CDN, so it needs a network connection:
+Play the sample month with nothing installed but Python. It is a recording of the offline `rules` brain, so it needs no API key and the probabilities it shows are the rules brain's, not a model's. The viewer loads Three.js from a CDN, so it needs a network connection:
 
 ```bash
 python -m valley view examples/sample-replay.json -o valley.html   # then open valley.html in a browser
@@ -101,10 +101,12 @@ python -m valley live --brain jev --seed 57 --open
 Reproduce the results. `bench` prints how many decisions and requests it expects and asks before spending any, skips runs that are already done, and writes everything to `results/`:
 
 ```bash
-python -m valley bench survival       # jev, laya, rules and random on ten seeds, 30 days each
-python -m valley tune --thresholds runs/<smoke run folders> -o results/hesitation/thresholds.json
-python -m valley bench hesitation     # off, 10th and 25th percentile of each brain's own confidence
+python -m valley bench survival       # jev, laya, rules and random on five seeds, 30 days each
+python -m valley tune --thresholds runs/run-jev-seed7 -o results/hesitation/thresholds.json
+python -m valley bench hesitation     # Jev with hesitation off, and at its own 10th and 25th percentile confidence
 ```
+
+The default set is small on purpose (about 20 model runs): the first five benchmark seeds, and hesitation for Jev only. The full design is one flag away: add `--seeds 3,7,11,19,23,42,57,64,88,101` to either command, and `--brains jev,laya` to `bench hesitation` (with a Laya smoke run in `tune --thresholds`).
 
 The full specification and the log of every decision made while building it are in [docs/build-spec.md](docs/build-spec.md).
 
@@ -119,7 +121,7 @@ The full specification and the log of every decision made while building it are 
 
 ## Limitations
 
-- Model answers vary between runs, so one run is not a measurement. The benchmark uses ten seeds and reports them together.
+- Model answers vary between runs, so one run is not a measurement. The benchmark reports its seeds together (five by default, ten with `--seeds`), and five seeds give noisier medians than ten.
 - The blunder rules are a simple, hand-written measure, and the `rules` brain was written with similar ideas, so it has a natural advantage on this metric.
 - Results apply to this valley and these prompts, not to the models in general.
 - The balance of the valley was tuned for the offline brains on the ten benchmark seeds. The `rules` brain keeps all three species alive on about half of them, which is intended: a better brain has room to do better and a worse one can visibly do worse.

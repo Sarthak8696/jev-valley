@@ -84,10 +84,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     bench = sub.add_parser("bench", help="run an experiment across seeds and brains, then summarise it")
     bench.add_argument("experiment", choices=("survival", "hesitation", "rivals"))
-    bench.add_argument("--seeds", type=_seed_list, default=None, help="comma-separated seeds (default: the ten benchmark seeds)")
+    bench.add_argument("--seeds", type=_seed_list, default=None,
+                       help="comma-separated seeds (default: the first five benchmark seeds, 3,7,11,19,23; "
+                            "all ten are 3,7,11,19,23,42,57,64,88,101)")
     bench.add_argument("--days", type=int, default=30)
     bench.add_argument("--brains", type=lambda t: [b for b in t.split(",") if b], default=None,
-                       help="run only these brains, comma-separated")
+                       help="run only these brains, comma-separated (hesitation defaults to jev; add laya with --brains jev,laya)")
     bench.add_argument("--out", default="results", help="results folder (default results)")
     bench.add_argument("--jobs", type=int, default=1, help="runs in parallel (default 1)")
     bench.add_argument("--yes", action="store_true", help="skip the cost confirmation for model brains")
@@ -158,7 +160,7 @@ def _bench(args) -> int:
     from valley import bench
     try:
         outcome = bench.run_experiment(
-            args.experiment, base_dir=args.out, seeds=args.seeds or bench.BENCH_SEEDS, days=args.days,
+            args.experiment, base_dir=args.out, seeds=args.seeds or bench.DEFAULT_SEEDS, days=args.days,
             brains=args.brains, jobs=args.jobs, yes=args.yes, force=args.force, summary_only=args.summary_only,
             reuse_survival=args.reuse_survival, thresholds_file=args.thresholds_file,
             batch=args.batch, workers=args.workers, timeout=args.timeout, price_per_mtok=args.price_per_mtok)

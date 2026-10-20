@@ -935,6 +935,7 @@ Record every choice not covered above, and every change to a value in this docum
 | 2026-10-20 | `pace.hours_per_second` is 1 divided by the larger of the pace setting and that hour's compute time. `--pace` (default 1.0) is the least real time per valley hour. | Matches the example in 11. |
 | 2026-10-20 | The viewer animates each live hour over a smoothed estimate of the time between frames, speeds up when it falls behind, and shows a pulsing indicator while it waits for the next hour. | 11 asks that slow hours look slower, not jerky. |
 | 2026-10-20 | `run_one` is split into `prepare_run` and `finish_run`, used by both `run` and `live`. | Live mode shares setup and saving with every other run. |
+| 2026-10-20 | `bench` defaults to the first five benchmark seeds (3, 7, 11, 19, 23) and runs hesitation for Jev only, which is about 20 model runs instead of 60. The full design is still one flag away: `--seeds` with all ten and `--brains jev,laya`. `tune --check` keeps using all ten seeds. | The author found the full set too many runs and left the choice to the builder. Five seeds give noisier medians, so results must name the seeds used. |
 
 ## Phase 5 tuning record
 

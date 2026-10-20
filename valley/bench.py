@@ -25,7 +25,10 @@ from valley.world import DEFAULT_HEIGHT, DEFAULT_MAX_CREATURES, DEFAULT_WIDTH
 
 PREY = ("rabbit", "deer")
 EXPERIMENTS = ("survival", "hesitation", "rivals")
-DEFAULT_BRAINS = {"survival": ("jev", "laya", "rules", "random"), "hesitation": ("jev", "laya")}
+DEFAULT_BRAINS = {"survival": ("jev", "laya", "rules", "random"), "hesitation": ("jev",)}
+# `bench` defaults to the first five benchmark seeds and to hesitation for Jev only, which keeps the set of
+# model runs small (about 20). The full design is `--seeds` with all of BENCH_SEEDS and `--brains jev,laya`.
+DEFAULT_SEEDS = BENCH_SEEDS[:5]
 RIVALS = {"wolf-jev_prey-laya": {"wolf": "jev", "prey": "laya"},
           "wolf-laya_prey-jev": {"wolf": "laya", "prey": "jev"}}
 HESITATION_LEVELS = ("off", "p10", "p25")
@@ -252,7 +255,7 @@ def confirm(question: str) -> bool:
     return input(f"{question} [y/N] ").strip().lower() in ("y", "yes")
 
 
-def run_experiment(experiment: str, base_dir: str = "results", seeds=BENCH_SEEDS, days: int = 30, brains=None,
+def run_experiment(experiment: str, base_dir: str = "results", seeds=DEFAULT_SEEDS, days: int = 30, brains=None,
                    jobs: int = 1, yes: bool = False, force: bool = False, summary_only: bool = False,
                    reuse_survival: bool = True, thresholds_file: str | None = None, out=print, **common) -> dict:
     """Plan an experiment, run what is missing, and write the summary. Returns what happened."""
