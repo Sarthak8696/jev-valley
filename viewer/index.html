@@ -66,6 +66,12 @@
   header.top h1 { margin: 0; font-size: 18px; font-weight: 650; letter-spacing: -0.01em; }
   .runinfo { display: flex; flex-wrap: wrap; gap: 4px 16px; color: var(--ink-2); font-size: 13px; }
   .runinfo b { color: var(--ink); font-weight: 600; }
+  .chip { display: inline-block; padding: 1px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .chip.warn { background: var(--warn-bg); color: var(--warn-ink); }
+  .overlay .btn.chip-btn { font-size: 12px; min-height: 30px; gap: 8px; }
+  .overlay .btn.chip-btn[aria-pressed="true"] { background: rgba(252,252,251,.92); color: #0b0b0b; border-color: rgba(0,0,0,.15); }
+  .overlay .btn.chip-btn[aria-pressed="false"] { opacity: .65; }
+  .swatch { display: inline-block; width: 22px; height: 0; border-top: 2px dashed #e0443e; }
   .live-badge { display: none; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2); }
   .live-badge.on { display: inline-flex; }
   .live-badge .dot { width: 8px; height: 8px; border-radius: 50%; background: #d03b3b; }
@@ -183,6 +189,12 @@
           <button class="btn" id="zoom-in" aria-label="Zoom in" title="Zoom in">+</button>
           <button class="btn" id="flat-toggle" aria-pressed="false">Flat map</button>
         </div>
+        <div class="overlay br">
+          <button class="btn chip-btn" id="hunt-toggle" aria-pressed="true"
+                  title="A red dashed line joins a wolf that chose to hunt to its target. Click to hide the lines.">
+            <span class="swatch"></span>Wolf hunting its target
+          </button>
+        </div>
         <div class="tip" id="tip">Click an animal to see why it chose what it did</div>
         <div class="dropzone" id="dropzone">
           <div>
@@ -236,7 +248,7 @@ const $ = (selector) => document.querySelector(selector);
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const lerp = (a, b, t) => a + (b - a) * t;
 const smooth = (t) => { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); };
-const easeInOut = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
+const easeInOut = (t) => { t = clamp(t, 0, 1); return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; };  // 0 before a move starts, 1 after it ends
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 function hash01(text) {
@@ -351,7 +363,7 @@ function pathPosition(path, progress) {
   return { x: lerp(a[0], b[0], local), y: lerp(a[1], b[1], local), dx: b[0] - a[0], dy: b[1] - a[1], local };
 }
 
-function computeScene(store, T) {
+function computeScene(store, T, glide = false) {
   const last = store.lastStep;
   T = clamp(T, 0, last);
   let k = Math.floor(T), f = T - k;
@@ -373,8 +385,10 @@ function computeScene(store, T) {
       const start = before ? [before[ROW.x], before[ROW.y]] : [row[ROW.x], row[ROW.y]];
       const path = [start, ...row[ROW.path]];
       const action = row[ROW.action];
-      const delay = 0.15 * hash01(id + ":" + (k + 1));
-      const duration = action === "flee" || action === "hunt" ? 0.3 : 0.55;
+      // A move starts after a small delay and is done by about 80% of the hour, and running (flee, hunt) is quicker than
+      // walking. When playing faster than 1x an hour lasts only a few frames, so animals glide across the whole hour instead.
+      const delay = glide ? 0 : 0.15 * hash01(id + ":" + (k + 1));
+      const duration = glide ? 0.95 : action === "flee" || action === "hunt" ? 0.45 : 0.65;
       const progress = easeInOut((f - delay) / duration);
       const pos = pathPosition(path, progress);
       const newborn = info.born === k + 1 && !before;
@@ -745,7 +759,7 @@ class GL {
 
     let dashCount = 0;
     for (const [id, [px, pz, s]] of positions) {
-      if (s.species !== "wolf" || s.action !== "hunt" || s.gone) continue;
+      if (!time.showHunt || s.species !== "wolf" || s.action !== "hunt" || s.gone) continue;
       let best = null, bestDist = Infinity;
       for (const [oid, [ox, oz, o]] of positions) {
         if (o.species === "wolf" || o.gone || o.fall > 0) continue;
@@ -844,7 +858,7 @@ class Flat2D {
 const state = {
   store: null, T: 0, playing: false, speed: 1, selected: null, follow: false, flat: false,
   rotation: 0, azimuth: 0, elevation: 0, zoom: 1, targetX: 0, targetZ: 0,
-  camAnim: null, live: null, thinking: false, ended: false,
+  camAnim: null, live: null, thinking: false, ended: false, showHunt: true,
 };
 
 const els = {
@@ -923,7 +937,9 @@ function buildHeader(meta) {
   const brainText = same ? `<b>${esc(brains.rabbit)}</b> for every species`
     : ["rabbit", "deer", "wolf"].map((s) => `${s}s on <b>${esc(brains[s])}</b>`).join(", ");
   const hes = meta.hesitate_below == null ? "off" : `below ${(+meta.hesitate_below).toFixed(2)} confidence`;
-  els.runinfo.innerHTML = `<span>Brain: ${brainText}</span><span>Seed <b>${esc(meta.seed)}</b></span><span>Hesitation <b>${hes}</b></span>`;
+  const offline = Object.values(brains).some((b) => b === "rules" || b === "random");
+  const offlineChip = offline ? '<span class="chip warn" title="rules and random are hand-written baselines. No model is called and no cost is incurred.">Offline baseline: no model is deciding</span>' : "";
+  els.runinfo.innerHTML = `${offlineChip}<span>Brain: ${brainText}</span><span>Seed <b>${esc(meta.seed)}</b></span><span>Hesitation <b>${hes}</b></span>`;
 }
 const esc = (value) => String(value).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
@@ -1141,6 +1157,7 @@ $("#zoom-in").onclick = () => setZoom(state.zoom * 1.3);
 $("#zoom-out").onclick = () => setZoom(state.zoom / 1.3);
 els.flatToggle.onclick = () => { state.flat = !state.flat; els.flatToggle.setAttribute("aria-pressed", String(state.flat)); animateCamera(); setZoom(state.zoom); };
 els.play.onclick = togglePlay;
+$("#hunt-toggle").onclick = (e) => { state.showHunt = !state.showHunt; e.currentTarget.setAttribute("aria-pressed", String(state.showHunt)); };
 els.scrub.addEventListener("input", () => { seek(+els.scrub.value); });
 for (const button of document.querySelectorAll("[data-speed]")) {
   button.onclick = () => {
@@ -1175,6 +1192,16 @@ window.addEventListener("dragover", (e) => { e.preventDefault(); els.dropzone.cl
 window.addEventListener("dragleave", () => els.dropzone.classList.remove("over"));
 window.addEventListener("drop", (e) => { e.preventDefault(); els.dropzone.classList.remove("over"); if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]); });
 /* ---- live mode */
+function liveStatus(pace, calls) {
+  const parts = [`Live: ${pace.hours_per_second.toFixed(1)} hours per second`];
+  if (calls) {
+    parts.push(calls.requests > 0
+      ? `${calls.requests.toLocaleString()} model requests, ${calls.input_tokens.toLocaleString()} input tokens`
+      : "no API calls (offline brain)");
+  }
+  return parts.join(" \u00b7 ");
+}
+
 function startLive(url) {
   state.live = { url };
   els.liveBadge.classList.add("on");
@@ -1194,9 +1221,9 @@ function startLive(url) {
     const now = performance.now();
     if (live.lastArrival) live.interval = 0.6 * live.interval + 0.4 * (now - live.lastArrival);
     live.lastArrival = now;
-    const { pace, new_creatures: newCreatures, notes, fates, ...rest } = frame;
+    const { pace, calls, new_creatures: newCreatures, notes, fates, ...rest } = frame;
     state.store.addFrame(rest, { newCreatures, notes, fates });
-    if (pace) els.liveText.textContent = `Live: ${pace.hours_per_second.toFixed(1)} hours per second`;
+    if (pace) els.liveText.textContent = liveStatus(pace, calls);
     state.thinking = false;
     if (state.store.lastStep % 24 === 0) renderPopTable();
     lastPanelKey = "";
@@ -1234,7 +1261,7 @@ function frame(now) {
     els.liveBadge.classList.toggle("thinking", !!state.live && state.thinking && state.playing);
     // Let a one-finger swipe scroll the page while the whole valley is in view; panning needs the gesture once zoomed in.
     els.view.style.touchAction = state.zoom > 1.01 ? "none" : "pan-y";
-    const scene = computeScene(state.store, state.T);
+    const scene = computeScene(state.store, state.T, state.speed > 1);
     if (state.follow && state.selected) {
       const pos = scene.animals.find((a) => a.id === state.selected);
       if (pos && usingGL) {
@@ -1244,7 +1271,7 @@ function frame(now) {
     }
     if (usingGL && !els.gl.hidden) {
       const lighting = lightingAt(scene.hours);
-      gl.update(scene, { now, store: state.store }, lighting, state.selected);
+      gl.update(scene, { now, store: state.store, showHunt: state.showHunt }, lighting, state.selected);
       gl.setCamera({ x: state.targetX, z: state.targetZ, azimuth: state.azimuth, elevation: state.elevation, zoom: state.zoom }, state.flat);
       gl.render();
     } else {

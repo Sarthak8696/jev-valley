@@ -78,6 +78,15 @@ class LiveServer:
             self._messages.append((event, json.dumps(payload, separators=(",", ":"))))
             self._cond.notify_all()
 
+    def _calls(self) -> dict:
+        """Running totals of what the brains have asked of their models so far, so the viewer can show real usage."""
+        totals = {"requests": 0, "decisions": 0, "input_tokens": 0, "output_tokens": 0, "retries": 0}
+        for brain in self.instances:
+            summary = brain.summary()
+            for key in totals:
+                totals[key] += summary.get(key, 0)
+        return totals
+
     def _extras(self, frame: dict, seconds: float) -> dict:
         step = frame["step"]
         created, fates, notes = {}, {}, {}
@@ -94,7 +103,7 @@ class LiveServer:
         return {
             "pace": {"seconds_this_hour": round(seconds, 3),
                      "hours_per_second": round(1.0 / max(self.pace, seconds, 1e-6), 2)},
-            "new_creatures": created, "notes": notes, "fates": fates,
+            "new_creatures": created, "notes": notes, "fates": fates, "calls": self._calls(),
         }
 
     # -- the simulation thread --------------------------------------------
@@ -231,13 +240,19 @@ class LiveServer:
         self._stop.set()
 
     def close(self) -> None:
-        """Stop the simulation, wait for the run to be saved, and shut the server down."""
+        """Stop the simulation, wait for the run to be saved, and shut the server down.
+
+        Safe to call on a server that was never started.
+        """
         self._stop.set()
         self._viewer_seen.set()
-        self.finished.wait(60)
-        time.sleep(0.05)  # let open streams flush their last events
-        self.httpd.shutdown()
+        if self._threads:
+            self.finished.wait(60)
+            time.sleep(0.05)  # let open streams flush their last events
+            self.httpd.shutdown()
         self.httpd.server_close()
+        for brain in self.instances:
+            brain.close()
 
     def run(self) -> None:
         """Serve until the run ends. Ctrl-C stops early and still saves what has been decided."""

@@ -105,7 +105,8 @@ def test_the_stream_sends_valid_frames_in_order_and_saves_a_matching_replay(tmp_
     frames = [data for kind, data in events if kind == "frame"]
     assert [f["step"] for f in frames] == list(range(1, 25))
     for f in frames:
-        assert set(f) >= {"step", "agents", "carcasses", "events", "pop", "pace", "new_creatures", "notes", "fates"}
+        assert set(f) >= {"step", "agents", "carcasses", "events", "pop", "pace", "new_creatures", "notes", "fates",
+                          "calls"}
         assert set(f["pace"]) == {"seconds_this_hour", "hours_per_second"}
         assert f["pace"]["seconds_this_hour"] >= 0 and f["pace"]["hours_per_second"] > 0
         assert ("food" in f) != ("food_diff" in f)
@@ -113,7 +114,7 @@ def test_the_stream_sends_valid_frames_in_order_and_saves_a_matching_replay(tmp_
     assert server.finished.wait(10)
     saved = read_replay(server.result["paths"]["replay"])
     assert saved["meta"]["run_id"] == "live-rules-seed19"
-    extras = ("pace", "new_creatures", "notes", "fates")
+    extras = ("pace", "new_creatures", "notes", "fates", "calls")
     streamed = [meta["frames"][0]] + [{k: v for k, v in f.items() if k not in extras} for f in frames]
     assert streamed == saved["frames"]
     assert events[-1][1]["hours"] == 24 and events[-1][1]["saved"].endswith("replay.json")
@@ -244,3 +245,38 @@ def test_a_model_error_during_a_live_run_stops_it_tells_the_viewer_and_saves_not
     assert server.finished.wait(10) and server.result is None
     assert not (tmp_path / "out" / "replay.json").exists()
     assert (tmp_path / "out" / "requests.jsonl").exists()
+
+
+def test_every_live_frame_carries_running_totals_of_model_calls(tmp_path, servers):
+    server = make_server(tmp_path, days=1)
+    servers.append(server)
+    conn, response = open_stream(server)
+    frames = [d for k, d in read_events(response) if k == "frame"]
+    conn.close()
+    calls = [f["calls"] for f in frames]
+    assert all(set(c) == {"requests", "decisions", "input_tokens", "output_tokens", "retries"} for c in calls)
+    assert all(c["requests"] == 0 for c in calls)  # the offline brain makes no API calls
+    assert [c["decisions"] for c in calls] == sorted(c["decisions"] for c in calls)
+    assert calls[-1]["decisions"] > calls[0]["decisions"] > 0
+
+
+def test_a_model_brains_requests_and_tokens_show_up_in_the_totals(tmp_path):
+    from tests.test_system_one import FakeTransport, answer, brain as model_brain, ok, request
+    spec = RunSpec(seed=19, brains=RULES, experiment="live", days=1)
+    server = LiveServer(spec, str(tmp_path / "out"), port=0, pace=0.0, out=lambda *a: None)
+    try:
+        t = FakeTransport(lambda body, n: ok({"action": answer()}, usage={"input_tokens": 120, "output_tokens": 9}))
+        server.instances = [model_brain(t)]
+        server.instances[0].decide([request()])
+        server.instances[0].decide([request()])
+        assert server._calls() == {"requests": 2, "decisions": 2, "input_tokens": 240, "output_tokens": 18, "retries": 0}
+    finally:
+        server.close()
+
+
+def test_closing_a_server_that_was_never_started_does_not_hang(tmp_path):
+    spec = RunSpec(seed=19, brains=RULES, experiment="live", days=1)
+    server = LiveServer(spec, str(tmp_path / "out"), port=0, pace=0.0, out=lambda *a: None)
+    started = time.time()
+    server.close()
+    assert time.time() - started < 5

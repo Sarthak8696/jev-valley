@@ -138,6 +138,13 @@ def _run(args) -> int:
     final = sim.frames[-1]["pop"]
     print(f"{spec.id}: {sim.step_no} hours, final rabbits {final['rabbit']}, deer {final['deer']}, wolves {final['wolf']}")
     print(f"replay: {result['paths']['replay']} ({result['replay_bytes'] / 1024:.0f} KB)")
+    for brain, cost in result["metrics"]["cost"].items():
+        if cost["requests"]:
+            latency = f", median {cost['latency_ms_p50']:.0f} ms per request" if cost["latency_ms_p50"] is not None else ""
+            print(f"{brain}: {cost['requests']:,} requests, {cost['input_tokens']:,} input tokens, "
+                  f"{cost['output_tokens']:,} output tokens{latency}")
+        else:
+            print(f"{brain}: offline brain, no model was called and nothing was billed")
     return 0
 
 

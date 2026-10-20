@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 import os
 import random
 
@@ -230,3 +231,16 @@ def test_the_retry_setting_reaches_the_client(monkeypatch):
     spec = cli._run_spec(parser.parse_args(["run", "--brain", "system-one@http://127.0.0.1:9#m", "--retries", "0"]), "run")
     brains, instances = bench.build_brains(spec, None)
     assert instances[0].max_retries == 0
+
+
+def test_a_run_says_plainly_whether_a_model_was_called(tmp_path, capsys):
+    assert cli.main(["run", "--brain", "rules", "--days", "1", "--out", str(tmp_path / "r"), "--quiet"]) == 0
+    out = capsys.readouterr().out
+    assert "rules: offline brain, no model was called and nothing was billed" in out
+
+
+def test_the_viewer_marks_offline_baselines_and_explains_the_red_dashes():
+    viewer = (Path(__file__).resolve().parent.parent / "viewer" / "index.html").read_text()
+    assert "Offline baseline: no model is deciding" in viewer
+    assert 'id="hunt-toggle"' in viewer and "Wolf hunting its target" in viewer
+    assert "no API calls (offline brain)" in viewer and "model requests" in viewer
