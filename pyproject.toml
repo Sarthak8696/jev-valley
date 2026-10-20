@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jev-valley"
+version = "0.1.0"
+description = "A small simulated valley where every animal decides its next action through a typed decision model."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = []
+
+[project.optional-dependencies]
+charts = ["matplotlib>=3.7"]
+dev = ["pytest>=7"]
+
+[tool.setuptools]
+packages = ["valley", "valley.brains"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

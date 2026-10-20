@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+*.egg-info/
+build/
+dist/
+.DS_Store
+
+# Local runs and response caches. Committed results live in results/.
+runs/
+.valley-cache/
+
+# Secrets must never be committed.
+.env
+.env.*
