@@ -911,6 +911,10 @@ Record every choice not covered above, and every change to a value in this docum
 | 2026-10-20 | `--cache` stores responses by SHA-256 of the request body in `.valley-cache/<brain>.jsonl`. It exists only for `run` and `live`. | The author approved an off-by-default cache that bench never uses. |
 | 2026-10-20 | Servers given as `system-one@URL#MODEL` read an optional key from `SYSTEM_ONE_API_KEY`. The Jev key is never sent to them. | 7.3 names no variable for them, and a key must not go to an unrelated server. |
 | 2026-10-20 | Every string written to a log or error has the API key replaced by `[redacted]`. | Ground rule 8, enforced even if a server echoes the key. |
+| 2026-10-20 | Replay `meta` gains `max_creatures`. Each creature record gains `notes` and `age0` (its age in hours when it entered the valley). The summary holds the run totals, the tallies and `valid`. | The mind panel needs memories and ages, which the 9 format could not carry. |
+| 2026-10-20 | Manual `run` ids with hesitation on use `h{value}`, for example `run-rules-h0.4-seed7`. `run` writes to `runs/<run id>` and logs requests only with `--log-requests`. | Run ids need a place for the threshold, and the 6.3 table makes logging off by default for `run`. |
+| 2026-10-20 | `view` writes the replay into the page with every `<` escaped as `\u003c`. | Keeps `</script>` and `<!--` inside a replay from breaking the page. |
+| 2026-10-20 | `python -m valley` exits with the handler's status code. | `tune --check` and `bench` need a non-zero exit on failure. |
 
 ## Phase 5 tuning record
 

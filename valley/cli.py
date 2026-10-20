@@ -66,6 +66,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"jev-valley {__version__}")
     sub = parser.add_subparsers(dest="command", metavar="<subcommand>")
 
+    run = sub.add_parser("run", help="run one valley and write its replay")
+    _add_run_arguments(run, log_default=False)
+    run.add_argument("--quiet", action="store_true", help="no per-day progress")
+
+    view = sub.add_parser("view", help="write the 3D viewer with a replay embedded")
+    view.add_argument("replay", help="a replay.json file")
+    view.add_argument("-o", "--output", default="valley.html")
+
     tune = sub.add_parser("tune", help="check the balance targets, or fix hesitation thresholds from smoke runs")
     tune.add_argument("--check", action="store_true", help="run rules and random and report each target")
     tune.add_argument("--thresholds", nargs="+", metavar="RUN_DIR", default=None,
@@ -75,6 +83,34 @@ def build_parser() -> argparse.ArgumentParser:
     tune.add_argument("--days", type=int, default=30)
     tune.add_argument("--jobs", type=int, default=min(8, os.cpu_count() or 1), help="parallel processes")
     return parser
+
+
+def _run(args) -> int:
+    from valley import bench
+    spec = _run_spec(args, "run")
+    out_dir = args.out or os.path.join("runs", spec.id)
+    try:
+        result = bench.run_one(spec, out_dir, progress=None if args.quiet else bench.stderr_progress(spec))
+    except (RuntimeError, ValueError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+    sim = result["sim"]
+    final = sim.frames[-1]["pop"]
+    print(f"{spec.id}: {sim.step_no} hours, final rabbits {final['rabbit']}, deer {final['deer']}, wolves {final['wolf']}")
+    print(f"replay: {result['paths']['replay']} ({result['replay_bytes'] / 1024:.0f} KB)")
+    return 0
+
+
+def _view(args) -> int:
+    from valley.replay import embed_in_viewer, read_replay
+    if not VIEWER_PATH.exists():
+        print(f"error: viewer not found at {VIEWER_PATH}", file=sys.stderr)
+        return 2
+    replay = read_replay(args.replay)
+    html = embed_in_viewer(VIEWER_PATH.read_text(encoding="utf-8"), replay)
+    Path(args.output).write_text(html, encoding="utf-8")
+    print(f"wrote {args.output} ({len(html) / 1024:.0f} KB); open it in a browser")
+    return 0
 
 
 def _tune(args) -> int:
@@ -102,7 +138,7 @@ def _tune(args) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    handlers = {"tune": _tune}
+    handlers = {"run": _run, "view": _view, "tune": _tune}
     if args.command is None:
         parser.print_help()
         return 0
