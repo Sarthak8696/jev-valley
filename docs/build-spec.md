@@ -184,14 +184,16 @@ Use Conventional Commits: `feat(world): ...`, `feat(brains): ...`, `test(actions
 
 ### 5.1 The map
 
-- Default size: 28 wide × 18 high (`--size 28x18`). `x` grows east, `y` grows south. `(0, 0)` is the north-west corner.
+- Default size: 40 wide × 26 high (`--size 40x26`). It was 28 × 18 until the ecosystem redesign (see the Decisions log). `x` grows east, `y` grows south. `(0, 0)` is the north-west corner.
 - Movement and distance use 8 directions. Distance is Chebyshev distance: `max(|dx|, |dy|)`.
 - Generation, in this order, using `world_rng`:
   1. Fill with grass.
-  2. Forest blobs: `max(2, area // 180)` blobs, radius 2.0–4.0.
+  2. Forest blobs: `max(2, area // 150)` blobs, radius 2.0–4.0.
   3. Water blobs: `max(2, area // 240)` blobs, radius 1.5–3.0.
-  4. Rocks: `area // 70` single grass tiles turned to rock.
-  5. Plants: every grass or forest tile starts with a random amount from 1 to its maximum.
+  4. On maps at least 32 wide and 20 high, a stream that wanders from one side to the other, one tile wide (sometimes two), with 3 fords of two tiles where animals can cross.
+  5. Ponds: while any tile is more than 5 tiles (Chebyshev) from water, paint a small pond on the tile farthest from water. No animal is ever more than its vision range from a drink.
+  6. Rocks: `area // 70` single grass tiles turned to rock.
+  7. Plants: every grass or forest tile starts with a random amount from 1 to its maximum.
 - A blob covers tile `(x, y)` when `dx² + (1.25·dy)² ≤ (r + w)²`, where `w` is a fresh random value in `[-0.9, 0.9]` per tile.
 - The generator retries with the next derived seed until the map has at least two separate water areas and at least 60% of tiles passable. Record the number of retries in the replay's `meta`.
 
@@ -229,7 +231,7 @@ Fixed values:
 | Flee speed (tiles per hour) | 2 | 2 | – |
 | Hunt speed (tiles per hour) | – | – | 2 |
 | Population share of the cap | 0.6 | 0.3 | 0.14 |
-| Starting count | 16 | 7 | 3 |
+| Starting count | 24 | 10 | 5 |
 
 Name lists:
 
@@ -267,16 +269,17 @@ These are the starting values. They are tuned in phase 5 until the targets in 5.
 
 `python -m valley tune --check` runs the `rules` and `random` brains on the ten benchmark seeds (8.1) and reports each target as pass or fail. Tuning is finished when all pass.
 
-1. With `rules`, all three species are alive at the end of the month on at least 5 of 10 seeds.
+1. With `rules`, all three species are alive at the end of the month on at least 8 of 10 seeds. (5 of 10 until the ecosystem redesign.)
 2. With `rules`, at least 3 of 10 seeds show a rabbit population that rises and then falls by at least 30% from its peak.
 3. With `random`, at least one species dies out on at least 7 of 10 seeds.
 4. With `rules`, no species sits at its cap for more than half of the month on any seed.
+5. With `rules`, wolves are never the only species left at the end of the month on any seed.
 
 These targets keep the baseline good but not perfect, so a better brain has room to do better and a worse one can visibly do worse.
 
 ### 5.6 Population cap
 
-- A species cannot breed when its own count is at or above `cap × share`, or when the total is at the cap.
+- A species cannot breed when its own count is at or above `cap × share`, or when the total is at the cap. The default cap is 75 (it was 50 until the ecosystem redesign).
 
 ### 5.7 Starting creatures
 
@@ -707,11 +710,11 @@ Rules:
 
 ```html
 <script type="importmap">
-{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/" } }
 </script>
 ```
 
-It makes no other network requests, except to the local live server in live mode.
+The only add-on it uses is `three/addons/objects/Sky.js`, from the same pinned package. It makes no other network requests, except to the local live server in live mode. Every model, texture and shape is drawn in code; nothing is downloaded. (The viewer was redesigned after the first build: sections 10.2 to 10.4 below describe the current one.)
 
 ### 10.1 Loading
 
@@ -723,30 +726,33 @@ It makes no other network requests, except to the local live server in live mode
 
 If WebGL is unavailable, show a plain message that says the 3D view needs WebGL and offer the flat map (10.3).
 
-### 10.2 The god's view
+### 10.2 The valley view
 
-- **Camera.** Orthographic, looking down at about 55° from the horizon. It rotates around the valley only in 90° steps, eased over 400 ms. Zoom is limited to between the whole valley and about 8 tiles across. No free orbit.
-- **Terrain.** Voxel style. Each tile is a block: grass 0.5 high, forest 0.5 high with a simple tree on top, water 0.25 high, rock 0.95 high. Plant density shows as a slightly brighter or darker grass top. Use `InstancedMesh` for tiles and trees.
-- **Animals.** Blocky low-poly shapes built from boxes, with clearly different silhouettes and sizes: rabbits small with ears, deer tall with legs, wolves long and low. Colours are a secondary cue, never the only one.
-- **Carcasses.** A small dark mound that shrinks as meat runs out.
-- **Selection.** Clicking an animal selects it (raycast), draws a ring under it, and opens the mind panel. The camera does not move unless the person presses "Follow".
-- **Day and night.** The sun's direction and colour follow the clock: warm low light at dawn and dusk, bright light by day, dim blue light at night. The change is smooth across each hour.
-- **Readability helpers.** A hunting wolf has a dashed line to its target. A hiding animal is drawn at 45% opacity. A hesitating animal shows a small pause marker above it.
+- **Camera.** A perspective camera that orbits the point it looks at, eased so it never snaps. Drag (one finger) to turn and tilt, drag with the right button or two fingers to slide, scroll or pinch to zoom, `Q` and `E` turn it by 45°, `0` or "Reset view" shows the whole valley again. "Follow" keeps the selected animal in the centre. It never goes below the ground.
+- **Land.** One smooth mesh whose height comes from the tile map and gradient noise: shallow basins where there is water, bumps where there is rock, and wooded hills around the valley that only exist for the view. Ground colour comes from biome (meadow patches, forest floor, sandy shore, river bed, rock, high bare slopes) and is tinted live by how much food is left on each tile.
+- **Water.** One sheet at sea level that only shows where the land dips below it, coloured and made see-through by depth, with moving ripples and reflections of the sky.
+- **Plants.** Instanced pine, oak and birch trees that sway, bushes, boulders, wild flowers in drifts, reeds and lily pads, and grass blades whose height follows the food on the tile, so grazed ground goes bare.
+- **Sky.** The three.js `Sky` follows the clock: sun, warm light at dawn and dusk, a moon, stars and fireflies at night, fog that changes colour, and the sky itself lights the scene and is reflected in the water.
+- **Animals.** One skinned mesh each, built from smooth parts on a small skeleton: deer (some stags with antlers), wolves and rabbits with individual coats and sizes, young animals smaller than adults.
+- **Carcasses.** A small dark mound with bones that shrinks as meat runs out.
+- **Selection.** Clicking an animal (raycast) draws a ring under it, shows its name above it, and opens the mind panel.
+- **Readability helpers.** A hunting wolf has a dashed line to its target. A hiding animal crouches with its ears back. A hesitating animal shows a small pause marker above it.
+- **Quality.** `?quality=low` or `?quality=high` forces a setting; by default phones and small machines get fewer plants, smaller shadows and a lower resolution. The resolution also drops by itself when the frame rate falls and returns when there is room.
 
 ### 10.3 Flat map
 
-A "Flat map" toggle switches to a straight-down camera with the same scene, for anyone who wants exact positions. It is not a separate renderer.
+Removed from the 3D view at the author's request. Only the no-WebGL fallback draws a flat map.
 
 ### 10.4 Motion
 
-The simulation is hourly, but nothing on screen jumps.
+The simulation is hourly, but nothing on screen moves hour by hour.
 
-- Each animal walks along its recorded `path` during the hour, finishing at about 80% of the hour, with a small hop per tile.
-- Speed matches the action: flee and hunt move fast, explore and follow move at a walk, rest barely moves.
-- Each animal starts its movement after a small random delay of 0 to 15% of the hour, fixed per animal per hour, so the valley does not move in lockstep. This delay is visual only.
-- Action poses: `eat` bobs the head down, `drink` leans toward the water, `rest` lies flat, `hide` sinks slightly and fades, `seek_mate` and `follow_group` walk normally.
-- Idle breathing plays when an animal is not moving, so the scene never freezes.
-- Births: newborns grow in from zero size. Deaths: the animal falls over and becomes a carcass.
+- Each animal has a track: one keyframe per tile it entered, spread across the hour it entered them in. A cubic curve joins the keyframes, and an animal's speed at a keyframe comes from its neighbours, so one that keeps moving never slows at a tile or at the turn of an hour, one that stops eases to a halt, and one that sets off waits a short random time of its own first. Position and speed come from the same curve.
+- An animal faces the way it goes. While standing it looks at what it is busy with (water, prey) and drifts about inside its tile.
+- Legs follow the ground actually covered, so feet do not slide at any playback speed. Deer and wolves walk, trot and gallop; rabbits hop.
+- Action poses: `eat` grazes with the head down, `drink` leans to the water, `rest` lies down with legs folded, `hide` crouches with ears back, `hunt` stalks low, `flee` runs with ears back (a deer raises its white tail), and idle animals breathe, look around and flick their ears.
+- While a run is still being decided the view stays one hour behind the newest hour, because the curve needs the next hour to be known.
+- Births: newborns grow in. Deaths: the animal falls over and becomes a carcass.
 
 ### 10.5 Panels
 
@@ -761,9 +767,9 @@ HTML panels around the 3D view. On phones in portrait, they stack under it.
 ### 10.6 Design rules
 
 - Light and dark mode through CSS variables and `prefers-color-scheme`. The 3D scene keeps its own lighting in both.
-- Keyboard: space plays and pauses, left and right arrows step one hour, `Q` and `E` rotate the camera, Tab reaches every control, and focus is visible.
+- Keyboard: space plays and pauses, left and right arrows step one hour, `Q` and `E` turn the camera, `0` resets it, Tab reaches every control, and focus is visible.
 - `prefers-reduced-motion`: start paused, rotate instantly, and turn off hops and idle breathing.
-- Runs at a steady 60 frames per second on a mid-range phone with 50 animals.
+- Aims for a steady 60 frames per second on a mid-range phone with 75 animals; the resolution lowers itself if it cannot.
 - Plain, specific labels in sentence case, named the way a viewer would name them.
 
 ---
@@ -945,6 +951,16 @@ Record every choice not covered above, and every change to a value in this docum
 | 2026-10-20 | Live frames also carry `calls`: running totals of requests, decisions, tokens and retries across the brains. The viewer shows them in its status line, shows an 'Offline baseline: no model is deciding' chip when the brain is rules or random, and `run` prints the same totals at the end. | The author could not tell whether Jev was being called. Usage and the kind of brain should be visible without opening a console. |
 | 2026-10-20 | A legend and a toggle for the red dashed lines from hunting wolves are added to the viewer. | The author did not know what the red lines were. |
 | 2026-10-20 | `LiveServer.close()` is safe to call on a server that was never started. | A test found that it waited forever. |
+| 2026-10-20 | Ecosystem redesign. The author found that every run ended with wolves left, and asked for a proper look at real ecosystems and rules designed from it. This overrides the 2026-10-20 decision that tuning changes only 5.4, because the problem was in the map and the rules, not the numbers. Everything below is recorded in the "Ecosystem redesign record" at the end of this file. | Author's request. A 60-seed diagnosis with the `rules` brain on the old valley found all three species alive on 29 of 60 seeds, nobody alive on 13, and wolves alone on 6. |
+| 2026-10-20 | The cause was water, not predation: 31% of rabbit deaths were thirst and the median rabbit died 5 tiles from water. The map generator now keeps every tile within 5 tiles of water (the rabbit's vision), by painting a pond on the tile farthest from water until none is farther. Maps at least 32 × 20 also get a wandering stream with 3 fords. | With only this change, the old 28 × 18 map went from 48% to 97% of seeds with all three species alive, and rabbit thirst deaths from 31% to 1%. |
+| 2026-10-20 | The default map is 40 × 26 with a creature cap of 75 and starting counts of 24 rabbits, 10 deer and 5 wolves (1.5 times the old counts, rounded). This changes 5.1, 5.3 and 5.6. Forest blobs are `area // 150` (was `// 180`). | The author asked for a bigger, more varied ground. A larger valley at a lower animal density also stabilises predator and prey, as in Huffaker's mite experiments. It costs more model tokens per run: the `rules` brain averaged 53 animals alive per hour on the new valley against 42 on the old one, about 1.3 times the tokens. |
+| 2026-10-20 | Wolves are no longer perfect hunters. A hunting wolf whose target is more than 2 tiles away loses the trail with a 40% chance each hour and wanders instead, and the chance to catch prey is scaled by the prey's energy: `clamp(1 + (0.5 - energy share), 0.4, 1.6)`, so a starving animal is caught 1.5 times as often and a full one half as often. | Yellowstone wolves succeed in about 15 to 26% of hunts and take calves out of proportion to their numbers. Each change alone moved the all-alive rate from 48% to 60% and 58%. |
+| 2026-10-20 | Tried and rejected, because none moved the all-alive rate beyond noise (60 seeds, plus or minus 6 points): wolf catch chance times 0.7 (47%), a refuge where hiding prey is seen only from 1 tile and caught 25% as often (48%), 12 or 24 hours of digestion after a kill (52%, 38%), a herd effect on catch chance (57%), and wolves crowding each other (52%). | Recorded so they are not tried again. |
+| 2026-10-20 | The 5.4 values were re-tuned for the new valley by random search (120 configurations, 16 seeds, then the top 8 on 60 held-out seeds, then a small grid around the winner). Plant regrowth is now 0.0048 (grass) and 0.00419 (forest), roughly 40% of before, so food limits the prey; wolf catch chance on rabbits is 0.6 and on deer 0.13; wolves lose 0.51 energy an hour, need 41 energy to breed and wait 380 hours; rabbits lose 0.46 an hour and wait 94 hours; deer wait 212 hours. Minimum energy to breed for wolves moved from 44 to 41, which 5.4 had listed as fixed. | Without a lower regrowth the prey sat at their caps and wolves did not regulate them, the same food limit that NetLogo's Wolf Sheep Predation model needs to be stable. |
+| 2026-10-20 | Balance target 1 is raised from 5 to 8 of 10 seeds, and a fifth target is added: wolves are never the only species left at the end. Targets 2 to 4 are unchanged. | The old bar let a baseline fail on half the seeds, which the author correctly called unfair. `random` still collapses, so the benchmark still separates a good brain from a bad one. |
+| 2026-10-20 | Wolves that lose a trail remember it ("lost the trail of ..."), so the model sees it in `recent`. The model is not told about the rule itself. | A failed hunt is something the animal would know. |
+| 2026-10-20 | The viewer is rewritten. There is no flat-map option (a flat map is drawn only when WebGL is missing). Motion is a continuous curve through each animal's tiles instead of a move per hour. The camera is a perspective orbit instead of 90 degree steps. Terrain, water, sky, plants and animals are drawn in code, with the `Sky` add-on from the same pinned three.js package, and nothing is downloaded. This changes 10.2 to 10.4 and 10.6, and the import map in 10. | The author asked for natural movement without an hourly tick, no flat map, a more realistic game-like look and a bigger, more varied ground. No assets were downloaded because downloads need the author's explicit permission. |
+| 2026-10-20 | While a live run is still coming in, the viewer stays one hour behind the newest hour and shows the last hour only after the run has ended. | The motion curve needs the next hour to be known, or the last stretch would change shape when the next hour arrives. |
 
 ## Phase 5 tuning record
 
@@ -977,3 +993,85 @@ The `rules` baseline was tuned by changing only the 5.4 values. `python -m valle
 | Carcass lifetime (hours) | world | 72 | 48 |
 
 Unchanged: max energy, max hydration, adult age, minimum energy to breed, and the creature cap of 50.
+
+## Ecosystem redesign record
+
+Everything here was measured with the offline `rules` and `random` brains. No model was called. "All alive" means all three species are alive at the end of the 30 days. The 60-seed experiments carry about plus or minus 6 points of noise, so only differences of 12 points or more mean anything.
+
+### The problem, measured on the old valley (28 × 18, cap 50, 60 seeds)
+
+| Measure | Result |
+|---|---|
+| All three species alive at the end | 29 of 60 |
+| Only wolves alive at the end | 6 of 60 |
+| Nobody alive at the end | 13 of 60 |
+| Wolves alive at the end | 45 of 60 |
+| How long wolves outlast the prey when the prey all die first | median 99 hours, at most 115 (a full wolf starves in about 105) |
+| How rabbits died | 59% eaten, 31% thirst, 10% starved |
+| How deer died | 73% eaten, 20% thirst, 6% starved |
+| Rabbits that died of thirst, distance to the nearest water | median 5 tiles; 477 of 770 within 6 tiles; 398 of 770 had `drink` as their last action |
+
+Wolves are the last ones standing for a simple reason: a wolf has a long starvation buffer, so when the prey go it is the last to die. The prey went because they died of thirst, on a map with about two ponds.
+
+### What each change did on its own (old valley, `rules`, 60 seeds, all alive)
+
+| Change | All alive |
+|---|---|
+| Nothing (baseline) | 48% |
+| Twice as many ponds | 73% |
+| Three times as many ponds | 78% |
+| Every tile within 5 tiles of water | 97% |
+| Every tile within 6 tiles / within 4 tiles | 93% / 85% |
+| Wolves lose a far target 40% of hours | 60% |
+| Weak prey easier to catch | 58% |
+| Herd effect on catch chance | 57% |
+| 12 / 24 hours of digestion after a kill | 52% / 38% |
+| Wolves crowding each other | 52% |
+| Wolf catch chance times 0.7 | 47% |
+| Hiding prey seen only from 1 tile and caught 25% as often | 48% |
+| Bigger map, same animals (40 × 26 / 56 × 36) | 85% / 77% (at 56 × 36 wolves starve in 20% of runs) |
+
+The `random` brain keeps all three alive on 0 to 7% of seeds in every variant above, so the benchmark still separates brains.
+
+### After the water fix: prey at their caps
+
+With the new valley and the old 5.4 values, rabbits or deer sat at their caps for over half the month on 95 to 100% of seeds and wolves did not regulate them. Plant regrowth was cut to about 40% of its old value so that food limits the prey, as the grass does in NetLogo's Wolf Sheep Predation model, and the other 5.4 values were searched again.
+
+| Value | Species | Before | After |
+|---|---|---|---|
+| Grass regrowth chance per hour | world | 0.0125 | 0.0048 |
+| Forest regrowth chance per hour | world | 0.0109 | 0.00419 |
+| Catch chance on rabbits | wolf | 0.46 | 0.6 |
+| Catch chance on deer | wolf | 0.16 | 0.13 |
+| Energy lost per hour | wolf | 0.57 | 0.51 |
+| Minimum energy to breed | wolf | 44 | 41 |
+| Breeding cooldown (hours) | wolf | 412 | 380 |
+| Energy lost per hour | rabbit | 0.43 | 0.46 |
+| Breeding cooldown (hours) | rabbit | 84 | 94 |
+| Breeding cooldown (hours) | deer | 168 | 212 |
+| Starting count | rabbit / deer / wolf | 16 / 7 / 3 | 24 / 10 / 5 |
+| Creature cap | all | 50 | 75 |
+| Map size | world | 28 × 18 | 40 × 26 |
+
+Method: 120 random configurations scored on 16 seeds; the best 8 re-scored on 60 seeds that were not used in the search (500 to 559); then a small grid around the winner, which fixed the one benchmark seed (101) where rabbits sat at their cap.
+
+### Result on the final values
+
+| Check | Result |
+|---|---|
+| `tune --check`, ten benchmark seeds | all five targets pass: all alive on 10 of 10, rabbit boom and bust on 10 of 10, `random` loses a species on 10 of 10, no species at its cap for over half the month on 0, wolves alone on 0 |
+| `rules`, 100 fresh seeds (1000 to 1099) | all alive on 97%, wolves alone on 0%, nobody left on 0%, a species at its cap for over half the month on 2%, rabbit boom and bust on 96%, 53 animals alive on average |
+| `random`, the same seeds | all alive on 0%; wolves extinct on 100%, rabbits extinct on 75% |
+
+### Where the rules come from
+
+- Wolves are not perfect hunters. Yellowstone wolves succeed in about 26% of hunts in a severe winter and 15% in a mild one (USGS, https://digitalcommons.unl.edu/usgsnpwrc/337), and make about 1.9 kills per wolf per month (Smith and others, https://digitalcommons.mtu.edu/michigantech-p/13805).
+- Wolves take the young and the weak: calves were 43% of elk kills in 1995 to 2000, and selection varied with the condition of the herd (same source). Predators kill most deer fawns in their first summer, while adult deer are rarely killed by predators (Pennsylvania Game Commission, https://www.pa.gov/agencies/pgc/wildlife/discover-pa-wildlife/white-tailed-deer/predation-and-deer-population).
+- Refuges, spatial patchiness, and density-dependent predator mortality are named as stabilisers, and rich food and perfect predators as destabilisers, at https://en.wikipedia.org/wiki/Paradox_of_enrichment. Huffaker's mite experiment found predators overexploited their prey in a simple setting and coexisted when the habitat was patchy and prey could disperse (https://en.wikipedia.org/wiki/Huffaker%27s_mite_experiment).
+- NetLogo's Wolf Sheep Predation is unstable with only sheep and wolves and generally stable once sheep must eat regrowing grass (https://ccl.northwestern.edu/netlogo/models/WolfSheepPredation).
+
+### Limits of this record
+
+- The numbers are game-scaled, not field data. No source was found for wolf food per day, fasting time or wolf to prey ratios, so none was used. A fact sheet that gives one wolf per 50 to 200 deer is an educational figure, not a study, and was not used either.
+- The theory pages are encyclopedia articles, not the original papers.
+- The valley was tuned for the offline brains. Jev may do better or worse than `rules`; that is what the benchmark is for.

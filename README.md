@@ -15,7 +15,7 @@ python -m valley live --seed 7 --open
 
 What you will see in the page:
 
-- The valley in 3D, with rabbits, deer and wolves moving, hunting, hiding and drinking, in day and night light. Rotate with Q and E, zoom with + and -, and switch to a flat map.
+- A 40 × 26 valley in 3D: a stream with fords, ponds, woods, meadows with wild flowers, and wooded hills around it. The sun, moon and stars follow the clock, and grass goes bare where animals have grazed. Rabbits, deer and wolves walk, trot, hop, graze, lie down, hide, hunt and drink, and keep moving smoothly across the turn of every hour. Drag to look around, scroll or pinch to zoom, right-drag or two fingers to slide, Q and E to turn, 0 to see the whole valley again.
 - Click any animal to see its hunger and thirst, what it chose this hour, the probability the model gave to every action ("Why it chose this"), and its recent memories.
 - A status line that shows the pace and the real usage so far, for example `Live: 1.0 hours per second · 214 model requests, 85,310 input tokens`. If the model is slow, the valley's clock slows down and the badge pulses while it waits. Decisions are never skipped or guessed.
 - A warning chip, **Offline baseline: no model is deciding**, whenever the brain is the hand-written `rules` or `random` one. If you see that chip, nothing is being sent to Jev and nothing is billed.
@@ -96,6 +96,19 @@ Several animals go into one request (16 by default, `--batch` to change it), eac
 
 The code overrides a model's choice in two places only. If the chosen action cannot be done at that moment (flee with no wolf in sight, for example), the animal explores instead. And with hesitation on, which is off unless you ask for it, an animal freezes when the model's confidence is below the threshold.
 
+## Why the valley is balanced this way
+
+The first version of the valley ended with wolves alone on some runs, and with nobody left on others. The `rules` baseline kept all three species alive to the end of the month on only 29 of 60 seeds. The cause was water: 31% of rabbit deaths were thirst, and the median rabbit died five tiles from the nearest drink, so the rabbits went first and the wolves, which can go about 105 hours without food, outlived them. Wolves were never the problem.
+
+The valley was changed in the ways real predator and prey systems suggest, and each change was tested alone before it was kept:
+
+- **Water within reach.** No tile is more than five tiles, the rabbit's vision, from water. On the old map this alone took the baseline from 48% to 97% of seeds with all three species alive.
+- **Wolves are not perfect hunters.** Yellowstone wolves succeed in about 15 to 26% of hunts ([USGS](https://digitalcommons.unl.edu/usgsnpwrc/337)) and take calves out of proportion to their numbers ([Smith and others](https://digitalcommons.mtu.edu/michigantech-p/13805)). A hunting wolf can lose a prey that is still some way off, and weak animals are easier to catch than strong ones.
+- **Food limits the prey.** Plants regrow slower, so the prey settle below their caps instead of piling up against them. NetLogo's wolf and sheep model needs the same thing to be stable ([NetLogo](https://ccl.northwestern.edu/netlogo/models/WolfSheepPredation)).
+- **More room.** A bigger valley at a lower density gives prey places to be, which is the idea behind [Huffaker's mite experiment](https://en.wikipedia.org/wiki/Huffaker%27s_mite_experiment).
+
+Things that did not help were tried and dropped: weaker wolves, stronger hiding, digestion time after a kill, and crowding between wolves. The balance targets are now stricter: the `rules` baseline must keep all three species alive on 8 of 10 benchmark seeds, wolves must never be the only species left, and `random` must still collapse. On 100 seeds that no tuning ever saw, `rules` kept all three alive on 97%, and `random` on none. All of the numbers, the experiments and the limits are in the [ecosystem redesign record](docs/build-spec.md#ecosystem-redesign-record). They describe the offline baselines; how Jev does in this valley is what the benchmark is for.
+
 ## Run it
 
 Python 3.11 or newer. The simulation, client and viewer need nothing else. `matplotlib` is optional and only draws the charts.
@@ -120,7 +133,7 @@ Watch a finished run in the viewer (to watch one as it is decided, see [See it r
 python -m valley view runs/run-jev-seed7/replay.json -o valley.html   # then open valley.html in a browser
 ```
 
-The viewer loads Three.js from a CDN, so it needs a network connection. The offline `rules` and `random` brains are the baselines the models are compared against. They are not run by default; name one with `--brain rules` if you want to see it.
+The viewer loads Three.js, and its sky add-on, from a CDN, so it needs a network connection. Everything else in it, the land, water, plants and animals, is drawn in code, and nothing is downloaded. It lowers its own resolution when a device cannot keep up; add `?quality=low` to the page address to force the lighter version. The offline `rules` and `random` brains are the baselines the models are compared against. They are not run by default; name one with `--brain rules` if you want to see it.
 
 Reproduce the results. `bench` prints how many decisions and requests it expects and asks before spending any, skips runs that are already done, and writes everything to `results/`:
 
@@ -150,7 +163,7 @@ The full specification and the log of every decision made while building it are 
 - Model answers vary between runs, so one run is not a measurement. The benchmark reports its seeds together (five by default, ten with `--seeds`), and five seeds give noisier medians than ten.
 - The blunder rules are a simple, hand-written measure, and the `rules` brain was written with similar ideas, so it has a natural advantage on this metric.
 - Results apply to this valley and these prompts, not to the models in general.
-- The balance of the valley was tuned for the offline brains on the ten benchmark seeds. The `rules` brain keeps all three species alive on about half of them, which is intended: a better brain has room to do better and a worse one can visibly do worse.
+- The balance of the valley was tuned for the offline brains. The `rules` brain keeps all three species alive on almost every seed, and `random` on almost none, so a model that matches `rules` has little room to show it is better on survival alone; the blunder and calibration measures are there for that. The game's numbers are scaled for play, not taken from field data, and the sources above are the only research behind them.
 - The live API has not been called while building this. The client was tested against a fake server written from the documented request and response shape.
 
 ## How this was built
