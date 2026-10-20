@@ -8,6 +8,7 @@ the same for every brain that plays the same seed.
 import hashlib
 import random
 from dataclasses import dataclass
+from functools import lru_cache
 
 GRASS, FOREST, WATER, ROCK = ".", "T", "~", "^"
 
@@ -42,6 +43,15 @@ def chebyshev(ax: int, ay: int, bx: int, by: int) -> int:
     return max(abs(ax - bx), abs(ay - by))
 
 
+@lru_cache(maxsize=None)
+def offsets_by_distance(radius: int) -> tuple[tuple[int, int], ...]:
+    """Every offset within `radius`, nearest first: Chebyshev distance, then straight-line distance,
+    then row-major order. The first match in this order is the nearest tile, with a fixed tie-break."""
+    points = [(dx, dy) for dy in range(-radius, radius + 1) for dx in range(-radius, radius + 1)]
+    points.sort(key=lambda p: (max(abs(p[0]), abs(p[1])), p[0] * p[0] + p[1] * p[1], p[1], p[0]))
+    return tuple(points)
+
+
 @dataclass
 class Carcass:
     id: int
@@ -65,6 +75,7 @@ class World:
         self._next_carcass_id = 1
         self.water_tiles = [(i % width, i // width) for i, c in enumerate(cells) if c == WATER]
         self._regrow_tiles = [i for i, c in enumerate(cells) if c in (GRASS, FOREST)]
+        self._terrain_cache: dict[tuple, tuple[int, int] | None] = {}
 
     # -- generation -------------------------------------------------------
 
@@ -123,6 +134,45 @@ class World:
 
     def rows(self) -> list[str]:
         return [self.cells[y * self.width:(y + 1) * self.width] for y in range(self.height)]
+
+    # -- nearest-tile lookups ---------------------------------------------
+
+    def nearest_terrain(self, terrain: str, x: int, y: int, radius: int) -> tuple[int, int] | None:
+        """The nearest tile of a terrain within `radius`. Terrain never changes, so answers are cached."""
+        key = (terrain, x, y, radius)
+        if key in self._terrain_cache:
+            return self._terrain_cache[key]
+        found = None
+        for dx, dy in offsets_by_distance(radius):
+            tx, ty = x + dx, y + dy
+            if 0 <= tx < self.width and 0 <= ty < self.height and self.cells[ty * self.width + tx] == terrain:
+                found = (tx, ty)
+                break
+        self._terrain_cache[key] = found
+        return found
+
+    def nearest_plants(self, x: int, y: int, radius: int, include_here: bool = True,
+                       occupied=None) -> tuple[int, int] | None:
+        """The nearest tile within `radius` that has plants on it. If `occupied` is given, tiles in it are skipped."""
+        width, height, food = self.width, self.height, self.food
+        for dx, dy in offsets_by_distance(radius):
+            if not include_here and dx == 0 and dy == 0:
+                continue
+            tx, ty = x + dx, y + dy
+            if 0 <= tx < width and 0 <= ty < height and food[ty * width + tx] > 0:
+                if occupied is None or (tx, ty) not in occupied:
+                    return tx, ty
+        return None
+
+    def nearest_free_forest(self, x: int, y: int, radius: int, occupied) -> tuple[int, int] | None:
+        """The nearest forest tile within `radius` that no creature is standing on."""
+        width, height, cells = self.width, self.height, self.cells
+        for dx, dy in offsets_by_distance(radius):
+            tx, ty = x + dx, y + dy
+            if 0 <= tx < width and 0 <= ty < height and cells[ty * width + tx] == FOREST:
+                if (tx, ty) not in occupied:
+                    return tx, ty
+        return None
 
     # -- hourly update ----------------------------------------------------
 
