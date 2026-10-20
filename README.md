@@ -4,7 +4,31 @@ A small simulated valley where every rabbit, deer and wolf decides its next acti
 
 <!-- Add here: a GIF of the 3D viewer and a link to the hosted viewer. The author records the GIF and hosts the page. -->
 
-There is no bundled demo. Every run the viewer plays is one you make with a model: see [Run it](#run-it).
+## See it running
+
+The quickest way to see Jev Valley work is **live mode**. It starts a local page (on 127.0.0.1 only), waits for you to open it, and then plays the valley at one valley hour per real second while the model decides what every animal does next:
+
+```bash
+export TYPESAFE_API_KEY=...        # your Jev key; it is read from the environment and never logged
+python -m valley live --seed 7 --open
+```
+
+What you will see in the page:
+
+- The valley in 3D, with rabbits, deer and wolves moving, hunting, hiding and drinking, in day and night light. Rotate with Q and E, zoom with + and -, and switch to a flat map.
+- Click any animal to see its hunger and thirst, what it chose this hour, the probability the model gave to every action ("Why it chose this"), and its recent memories.
+- A pace badge. If the model is slow, the valley's clock slows down and the badge pulses while it waits. Decisions are never skipped or guessed.
+- A population chart, an event log, and a timeline you can scrub back along.
+
+A month is 720 valley hours, so a full run takes 12 minutes or more, and longer if the model is slow. Add `--days 2` for a short one. Closing the page stops the run and saves what was decided to `runs/live-jev-seed7/`. The valley does not start until a page is open, so no model calls are spent unseen.
+
+To try the viewer without a key, run live mode with the offline baseline. This is the hand-written `rules` brain, not a model, so it shows nothing about Jev:
+
+```bash
+python -m valley live --brain rules --seed 57 --open
+```
+
+To watch a finished run afterwards, see [Run it](#run-it). There is no bundled demo: every run you watch is one you make.
 
 ## The question
 
@@ -84,11 +108,10 @@ export TYPESAFE_API_KEY=...           # required for jev; also TYPESAFE_BASE_URL
 python -m valley run --seed 7 --days 2 --log-requests    # a small first run with Jev, the default brain
 ```
 
-Watch a run, either after the fact or as it is decided (live mode binds to 127.0.0.1 only):
+Watch a finished run in the viewer (to watch one as it is decided, see [See it running](#see-it-running)):
 
 ```bash
 python -m valley view runs/run-jev-seed7/replay.json -o valley.html   # then open valley.html in a browser
-python -m valley live --seed 7 --open
 ```
 
 The viewer loads Three.js from a CDN, so it needs a network connection. The offline `rules` and `random` brains are the baselines the models are compared against. They are not run by default; name one with `--brain rules` if you want to see it.
