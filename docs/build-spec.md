@@ -176,7 +176,7 @@ Use Conventional Commits: `feat(world): ...`, `feat(brains): ...`, `test(actions
 ### 4.2 Playback speed
 
 - The viewer plays one valley hour per real second at normal speed.
-- A full month plays in 12 minutes at 1×. The viewer also offers 4× and 16×.
+- A full month plays in 12 minutes at 1×. There is no fast-forward: the speed buttons and the live catch-up were removed at the author's request (see the Decisions log). The scrubber still jumps to any hour.
 
 ---
 
@@ -735,7 +735,8 @@ If WebGL is unavailable, show a plain message that says the 3D view needs WebGL 
 - **Sky.** The three.js `Sky` follows the clock: sun, warm light at dawn and dusk, a moon, stars and fireflies at night, fog that changes colour, and the sky itself lights the scene and is reflected in the water.
 - **Animals.** One skinned mesh each, built from smooth parts on a small skeleton: deer (some stags with antlers), wolves and rabbits with individual coats and sizes, young animals smaller than adults.
 - **Carcasses.** A small dark mound with bones that shrinks as meat runs out.
-- **Selection.** Clicking an animal (raycast) draws a ring under it, shows its name above it, and opens the mind panel.
+- **Selection.** Clicking an animal (raycast) draws a ring under it, shows its name above it, and opens the mind panel. In full screen, where the panels are off screen, a small card shows its name, what it chose and how sure it was.
+- **Full screen.** A button, or `F`, makes the view and the timeline fill the screen (the browser's own full screen where it exists, otherwise the same layout covering the page, as on an iPhone).
 - **Readability helpers.** A hunting wolf has a dashed line to its target. A hiding animal crouches with its ears back. A hesitating animal shows a small pause marker above it.
 - **Quality.** `?quality=low` or `?quality=high` forces a setting; by default phones and small machines get fewer plants, smaller shadows and a lower resolution. The resolution also drops by itself when the frame rate falls and returns when there is room.
 
@@ -759,7 +760,7 @@ The simulation is hourly, but nothing on screen moves hour by hour.
 HTML panels around the 3D view. On phones in portrait, they stack under it.
 
 - **Header:** which brain controls each species, the seed, hesitation on or off, and in live mode the real pace (`1.0 hours per second`).
-- **Timeline:** play and pause, speed (1×, 4×, 16×), a scrubber across the month, and the clock text.
+- **Timeline:** play and pause, a scrubber across the month, and the clock text. Playback is always one valley hour per second (in live mode, the pace the run arrives at). A finished replay has its scrubber at once. In live mode there is no scrubber, and no stepping with the arrow keys, until the run has played to its end; a note says so.
 - **Mind panel** for the selected animal: display name, personality, age, hunger and thirst bars, what it chose, its confidence, a bar for every action's probability (the chosen action highlighted), whether it hesitated, its recent memories, and its fate if it died. Title the probability section "Why it chose this".
 - **Population chart:** one line per species across the month, with a marker at the current hour.
 - **Events:** the latest events, newest first.
@@ -767,7 +768,7 @@ HTML panels around the 3D view. On phones in portrait, they stack under it.
 ### 10.6 Design rules
 
 - Light and dark mode through CSS variables and `prefers-color-scheme`. The 3D scene keeps its own lighting in both.
-- Keyboard: space plays and pauses, left and right arrows step one hour, `Q` and `E` turn the camera, `0` resets it, Tab reaches every control, and focus is visible.
+- Keyboard: space plays and pauses, left and right arrows step one hour, `Q` and `E` turn the camera, `0` resets it, `F` toggles full screen, Esc leaves it, Tab reaches every control, and focus is visible.
 - `prefers-reduced-motion`: start paused, rotate instantly, and turn off hops and idle breathing.
 - Aims for a steady 60 frames per second on a mid-range phone with 75 animals; the resolution lowers itself if it cannot.
 - Plain, specific labels in sentence case, named the way a viewer would name them.
@@ -962,6 +963,9 @@ Record every choice not covered above, and every change to a value in this docum
 | 2026-10-20 | The viewer is rewritten. There is no flat-map option (a flat map is drawn only when WebGL is missing). Motion is a continuous curve through each animal's tiles instead of a move per hour. The camera is a perspective orbit instead of 90 degree steps. Terrain, water, sky, plants and animals are drawn in code, with the `Sky` add-on from the same pinned three.js package, and nothing is downloaded. This changes 10.2 to 10.4 and 10.6, and the import map in 10. | The author asked for natural movement without an hourly tick, no flat map, a more realistic game-like look and a bigger, more varied ground. No assets were downloaded because downloads need the author's explicit permission. |
 | 2026-10-20 | While a live run is still coming in, the viewer stays one hour behind the newest hour and shows the last hour only after the run has ended. | The motion curve needs the next hour to be known, or the last stretch would change shape when the next hour arrives. |
 | 2026-10-20 | The ground masks for water, rock and woods fade to nothing within 6 tiles beyond the map, the water sheet reaches 9 tiles past it, and the hills around the valley carry a belt of trees that thins out with distance. | The author's screenshot showed the edge of the valley as long dark channels and blue slabs with square ends: the masks were being clamped at the map edge and stretched outward, and the water sheet was cut off at 3 tiles. |
+| 2026-10-21 | The playback speed buttons (1×, 4×, 16×) are removed, and so is the live viewer's automatic speed-up when it falls behind. Playback is one valley hour per second, or in live mode the pace the run arrives at. This changes 4.2, 10.5 and the 2026-10-20 live-motion row. | The author asked for the fast-forward option to be removed completely. |
+| 2026-10-21 | The viewer gains a full-screen button (also `F`; `Esc` leaves). It fullscreens the view and the timeline, using the browser's full screen where it exists and a page-covering layout otherwise (an iPhone). A small card with the selected animal's name, choice and confidence shows in full screen, because the side panels are not on screen. | The author asked for a full-screen option. |
+| 2026-10-21 | In live mode the timeline slider is hidden, and the arrow keys do not step hours, until the run has played to its end. A finished replay has the slider from the start. A run that stopped on a model error also unlocks it once its last hour has played. | The author asked that the slider be a playback option only after the whole playthrough has completed. |
 
 ## Phase 5 tuning record
 

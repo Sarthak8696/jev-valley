@@ -15,12 +15,12 @@ python -m valley live --seed 7 --open
 
 What you will see in the page:
 
-- A 40 × 26 valley in 3D: a stream with fords, ponds, woods, meadows with wild flowers, and wooded hills around it. The sun, moon and stars follow the clock, and grass goes bare where animals have grazed. Rabbits, deer and wolves walk, trot, hop, graze, lie down, hide, hunt and drink, and keep moving smoothly across the turn of every hour. Drag to look around, scroll or pinch to zoom, right-drag or two fingers to slide, Q and E to turn, 0 to see the whole valley again.
+- A 40 × 26 valley in 3D: a stream with fords, ponds, woods, meadows with wild flowers, and wooded hills around it. The sun, moon and stars follow the clock, and grass goes bare where animals have grazed. Rabbits, deer and wolves walk, trot, hop, graze, lie down, hide, hunt and drink, and keep moving smoothly across the turn of every hour. Drag to look around, scroll or pinch to zoom, right-drag or two fingers to slide, Q and E to turn, 0 to see the whole valley again, F for full screen.
 - Click any animal to see its hunger and thirst, what it chose this hour, the probability the model gave to every action ("Why it chose this"), and its recent memories.
 - A status line that shows the pace and the real usage so far, for example `Live: 1.0 hours per second · 214 model requests, 85,310 input tokens`. If the model is slow, the valley's clock slows down and the badge pulses while it waits. Decisions are never skipped or guessed.
 - A warning chip, **Offline baseline: no model is deciding**, whenever the brain is the hand-written `rules` or `random` one. If you see that chip, nothing is being sent to Jev and nothing is billed.
 - A red dashed line from a wolf that chose to hunt to its nearest target. A legend in the corner of the view explains it, and clicking the legend hides the lines.
-- A population chart, an event log, and a timeline you can scrub back along.
+- A population chart and an event log. Playback is always one valley hour per second, with no fast-forward. The timeline slider appears once a live run has played to its end, so you cannot skip ahead of it; a finished replay has it from the start.
 
 A month is 720 valley hours, so a full run takes 12 minutes or more, and longer if the model is slow. Add `--days 2` for a short one. Closing the page stops the run and saves what was decided to `runs/live-jev-seed7/`. The valley does not start until a page is open, so no model calls are spent unseen.
 

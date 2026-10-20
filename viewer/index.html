@@ -86,6 +86,18 @@
   .stage .view { position: relative; width: 100%; height: min(62vh, 640px); min-height: 320px; background: #9bb8d8; touch-action: none; }
   .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
   .stage canvas:focus-visible { outline-offset: -3px; }
+  /* Full screen: the view and the timeline fill the screen. Where the browser has no element full screen (an iPhone), the same
+     layout simply covers the page. */
+  .stage.is-full { position: fixed; inset: 0; z-index: 100; width: 100vw; height: 100vh; height: 100dvh; max-width: none; border: 0; border-radius: 0;
+                   display: flex; flex-direction: column; background: var(--bg); }
+  .stage.is-full .view { flex: 1 1 auto; height: auto; min-height: 0; }
+  .stage.is-full .timeline { background: var(--surface); }
+  body.has-full { overflow: hidden; }
+  .fs-card { display: none; position: absolute; left: 10px; bottom: 44px; max-width: min(320px, calc(100% - 20px)); padding: 8px 12px; border-radius: 10px;
+             background: rgba(20,20,22,.78); color: #fff; font-size: 13px; line-height: 1.4; pointer-events: none; }
+  .stage.is-full .fs-card:not([hidden]) { display: block; }
+  .fs-card strong { font-size: 14px; }
+  .fs-card .dim { color: rgba(255,255,255,.75); }
   .overlay { position: absolute; display: flex; gap: 6px; }
   .overlay.tl { top: 10px; left: 10px; }
   .overlay.tr { top: 10px; right: 10px; }
@@ -102,9 +114,10 @@
   .overlay .btn:hover { background: #fff; }
   .overlay .btn[aria-pressed="true"] { background: #2a78d6; color: #fff; border-color: #2a78d6; }
 
-  .timeline { display: grid; grid-template-columns: auto auto 1fr auto; gap: 10px; align-items: center; padding: 10px 12px; border-top: 1px solid var(--line); }
+  .timeline { display: flex; gap: 10px; align-items: center; padding: 10px 12px; border-top: 1px solid var(--line); }
+  .timeline input[type="range"] { flex: 1 1 auto; width: auto; min-width: 0; }
+  .timeline .scrub-note { flex: 1 1 auto; color: var(--muted); font-size: 13px; }
   .timeline .clock { font-weight: 600; min-width: 108px; text-align: right; font-variant-numeric: tabular-nums; }
-  .speeds { display: inline-flex; gap: 4px; }
   input[type="range"] { width: 100%; accent-color: var(--accent); min-height: 24px; }
 
   .notice { padding: 8px 12px; background: var(--warn-bg); color: var(--warn-ink); border-bottom: 1px solid var(--line); font-size: 13px; }
@@ -161,8 +174,6 @@
   @media (max-width: 900px) {
     .layout { grid-template-columns: minmax(0, 1fr); }
     .stage .view { height: 56vh; }
-    .timeline { grid-template-columns: auto 1fr auto; }
-    .timeline .speeds { grid-column: 1 / -1; order: 5; }
   }
   .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 </style>
@@ -176,7 +187,7 @@
   </header>
 
   <div class="layout">
-    <section class="card stage" aria-label="Valley">
+    <section class="card stage" id="stage" aria-label="Valley">
       <div class="notice" id="notice" hidden></div>
       <div class="view" id="view">
         <canvas id="gl" tabindex="0" role="img" aria-label="3D view of the valley. Drag to look around, scroll to zoom, click an animal to see why it chose its action. Space plays and pauses, arrow keys step one hour, Q and E turn the view."></canvas>
@@ -191,7 +202,9 @@
           <button class="btn" id="zoom-out" aria-label="Zoom out" title="Zoom out (-)">&minus;</button>
           <button class="btn" id="zoom-in" aria-label="Zoom in" title="Zoom in (+)">+</button>
           <button class="btn" id="reset-view" title="Show the whole valley again (0)">Reset view</button>
+          <button class="btn" id="fullscreen" title="Full screen (F)" aria-label="Full screen">Full screen</button>
         </div>
+        <div class="fs-card" id="fs-card" hidden aria-live="polite"></div>
         <div class="overlay br">
           <button class="btn chip-btn" id="hunt-toggle" aria-pressed="true"
                   title="A red dashed line joins a wolf that chose to hunt to its target. Click to hide the lines.">
@@ -213,12 +226,8 @@
       </div>
       <div class="timeline" id="timeline">
         <button class="btn primary" id="play" aria-label="Play" disabled>Play</button>
-        <div class="speeds" role="group" aria-label="Playback speed">
-          <button class="btn" data-speed="1" aria-pressed="true">1&times;</button>
-          <button class="btn" data-speed="4" aria-pressed="false">4&times;</button>
-          <button class="btn" data-speed="16" aria-pressed="false">16&times;</button>
-        </div>
-        <input type="range" id="scrub" min="0" max="720" step="1" value="0" aria-label="Hour of the month" disabled>
+        <input type="range" id="scrub" min="0" max="720" step="1" value="0" aria-label="Hour of the month" disabled hidden>
+        <span class="scrub-note" id="scrub-note" hidden>The timeline unlocks when this run has finished playing.</span>
         <div class="clock" id="clock">Day 1, 6 am</div>
       </div>
     </section>
@@ -1780,7 +1789,7 @@ class GL {
       if (this.labelFor !== ctx.selectedId) { this.labelFor = ctx.selectedId; this.setLabel(chosen[2].name, chosen[2].species); }
       const a = this.animals.get(ctx.selectedId);
       this.label.visible = true;
-      const ls = clamp(this.view.dist * 0.07, 0.9, 3.4); this.label.scale.set(ls * 3.6, ls, 1);
+      const ls = clamp(this.view.dist * 0.04, 0.28, 2.2); this.label.scale.set(ls * 3.6, ls, 1);  // smaller when the camera is close
       this.label.position.set(chosen[0], this.groundY(chosen[0], chosen[1]) + a.height + 0.55 + 0.04 * Math.sin(t * 2), chosen[1]);
     } else { this.ring.visible = false; this.label.visible = false; this.labelFor = null; }
 
@@ -1908,8 +1917,8 @@ class Flat2D {
 
 /* ------------------------------------------------------------------ application */
 const state = {
-  store: null, tracks: null, T: 0, playing: false, speed: 1, selected: null, follow: false,
-  live: null, thinking: false, ended: false, final: true, showHunt: true,
+  store: null, tracks: null, T: 0, playing: false, selected: null, follow: false,
+  live: null, thinking: false, ended: false, final: true, done: true, showHunt: true,
   view: { x: 0, z: 0, yaw: Math.PI / 4, pitch: 0.72, dist: 45 },  // what is on screen, eased towards `goal`
   goal: { x: 0, z: 0, yaw: Math.PI / 4, pitch: 0.72, dist: 45 },
   flatZoom: 1, userMoved: false,
@@ -1974,6 +1983,7 @@ function load(data, { live = false } = {}) {
   state.store = new Store(data);
   state.tracks = new Tracks(state.store);
   state.final = !live;
+  state.done = !live;  // a finished replay can be scrubbed at once; a live run only after it has played to the end
   els.dropzone.hidden = true; els.tip.hidden = false;
   els.play.disabled = false; els.scrub.disabled = false;
   const meta = state.store.meta;
@@ -2010,15 +2020,17 @@ function setPlayLabel() {
 }
 function togglePlay() {
   if (!state.store) return;
-  if (state.ended && !state.live) { state.T = 0; state.ended = false; }
+  if (state.ended && scrubbable()) { state.T = 0; state.ended = false; }
   state.playing = !state.playing; setPlayLabel();
 }
+const scrubbable = () => !state.live || state.done;
 function seek(T) {
-  if (!state.store) return;
+  if (!state.store || !scrubbable()) return;
   state.T = clamp(T, 0, state.tracks.maxTime(state.final));
   state.ended = false;
 }
 function stepHours(n) {
+  if (!scrubbable()) return;
   state.playing = false; setPlayLabel();
   seek(Math.round(state.T) + n);
 }
@@ -2032,12 +2044,12 @@ function advance(dtMs) {
     const behind = limit - state.T;
     if (behind <= 0) { state.thinking = true; return; }
     state.thinking = false;
-    const rate = (1000 / clamp(live.interval, 300, 5000)) * state.speed * (behind > 3 ? 1 + behind / 3 : 1);
+    const rate = 1000 / clamp(live.interval, 300, 5000);  // hours per second: whatever pace the run is arriving at, never faster
     state.T = Math.min(limit, state.T + (dtMs / 1000) * rate);
     return;
   }
-  state.T += (dtMs / 1000) * state.speed;
-  if (state.T >= limit) { state.T = limit; state.playing = false; state.ended = true; setPlayLabel(); }
+  state.T += dtMs / 1000;  // one valley hour per second
+  if (state.T >= limit) { state.T = limit; state.playing = false; state.ended = true; state.done = true; setPlayLabel(); }
 }
 
 /* ---- panels */
@@ -2046,13 +2058,28 @@ function updatePanels(scene) {
   const store = state.store;
   const step = Math.round(state.T);
   els.clock.textContent = clockText(step, store.startHour);
+  const locked = !scrubbable();
+  els.scrub.hidden = locked;
+  $("#scrub-note").hidden = !locked;
   if (document.activeElement !== els.scrub) els.scrub.value = String(step);
   const key = `${scene.k}:${scene.f > 0 ? 1 : 0}:${state.selected}`;
   if (key === lastPanelKey) return;
   lastPanelKey = key;
   renderMind(scene);
+  renderFullCard(scene);
   renderEvents(scene.k + (scene.f > 0 ? 1 : 0));
   drawPopulation();
+}
+
+function renderFullCard(scene) {
+  const card = $("#fs-card"), id = state.selected;
+  const row = id ? (scene.animals.find((a) => a.id === id) || {}).row : null;
+  if (!id || !row) { card.hidden = true; return; }
+  const info = state.store.creatures[id], action = row[ROW.action];
+  const chose = action ? `Chose <b>${esc(ACTION_NAMES[action] || action)}</b> (${row[ROW.conf]}% sure)${row[ROW.hesitated] ? ", froze" : ""}` : "Just born";
+  card.innerHTML = `<strong>${esc(info.name)} the ${esc(info.species)}</strong><div>${chose}</div>` +
+    `<div class="dim">${esc(hungerWord(row[ROW.energy]))}, ${esc(thirstWord(row[ROW.hydration]))}. Press Esc to leave full screen.</div>`;
+  card.hidden = false;
 }
 
 function renderMind(scene) {
@@ -2209,6 +2236,35 @@ for (const canvas of [els.gl, els.flat]) {
   canvas.addEventListener("wheel", (e) => { e.preventDefault(); zoomBy(Math.exp(-e.deltaY * 0.0011)); state.userMoved = true; }, { passive: false });
 }
 
+/* ---- full screen */
+const stage = $("#stage"), fullButton = $("#fullscreen");
+const nativeFullscreen = !!(stage.requestFullscreen || stage.webkitRequestFullscreen);
+const isFull = () => stage.classList.contains("is-full");
+function setFull(on) {
+  if (on === isFull()) return;
+  stage.classList.toggle("is-full", on);
+  document.body.classList.toggle("has-full", on);
+  fullButton.textContent = on ? "Exit full screen" : "Full screen";
+  fullButton.setAttribute("aria-label", fullButton.textContent);
+  fullButton.title = (on ? "Exit full screen" : "Full screen") + " (F)";
+  if (nativeFullscreen) {
+    try {
+      if (on) { const request = (stage.requestFullscreen || stage.webkitRequestFullscreen).call(stage); request?.catch?.(() => {}); }  // if it is refused the page-sized layout still applies
+      else if (document.fullscreenElement || document.webkitFullscreenElement) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    } catch (error) { /* the page-sized layout still applies */ }
+  }
+  lastPanelKey = "";
+  resize();
+}
+const toggleFull = () => setFull(!isFull());
+fullButton.onclick = toggleFull;
+for (const name of ["fullscreenchange", "webkitfullscreenchange"]) {
+  document.addEventListener(name, () => {
+    if (!document.fullscreenElement && !document.webkitFullscreenElement && isFull() && nativeFullscreen) setFull(false);  // Esc left full screen
+    resize();
+  });
+}
+
 function rotate(direction) { state.goal.yaw += direction * Math.PI / 4; state.userMoved = true; }
 $("#rot-left").onclick = () => rotate(-1);
 $("#rot-right").onclick = () => rotate(1);
@@ -2220,12 +2276,6 @@ $("#zoom-out").onclick = () => zoomBy(1 / 1.3);
 els.play.onclick = togglePlay;
 $("#hunt-toggle").onclick = (e) => { state.showHunt = !state.showHunt; e.currentTarget.setAttribute("aria-pressed", String(state.showHunt)); };
 els.scrub.addEventListener("input", () => { seek(+els.scrub.value); });
-for (const button of document.querySelectorAll("[data-speed]")) {
-  button.onclick = () => {
-    state.speed = +button.dataset.speed;
-    for (const b of document.querySelectorAll("[data-speed]")) b.setAttribute("aria-pressed", String(b === button));
-  };
-}
 document.addEventListener("keydown", (e) => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   const tag = e.target.tagName;
@@ -2240,7 +2290,8 @@ document.addEventListener("keydown", (e) => {
   else if (e.key === "+" || e.key === "=") zoomBy(1.3);
   else if (e.key === "-") zoomBy(1 / 1.3);
   else if (e.key === "0") resetView();
-  else if (e.key === "Escape") select(null);
+  else if ((e.key === "f" || e.key === "F") && !onButton) toggleFull();
+  else if (e.key === "Escape") { if (isFull()) setFull(false); else select(null); }
 });
 
 /* ---- file loading */
