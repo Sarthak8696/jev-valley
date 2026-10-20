@@ -97,5 +97,5 @@ class RulesBrain(Brain):
         return out
 
     def summary(self) -> dict:
-        return {"decisions": self.decisions, "requests": 0, "fallbacks": 0, "retries": 0,
+        return {"decisions": self.decisions, "requests": 0, "retries": 0,
                 "input_tokens": 0, "output_tokens": 0, "latencies_ms": []}

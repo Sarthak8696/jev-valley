@@ -165,6 +165,15 @@ def test_the_run_command_reports_a_missing_key_without_a_traceback(tmp_path, mon
     assert "TYPESAFE_API_KEY" in err and "Traceback" not in err
 
 
+def test_the_run_command_stops_on_a_model_error_and_saves_nothing(tmp_path, capsys):
+    out = tmp_path / "x"
+    code = cli.main(["run", "--brain", "system-one@http://127.0.0.1:9#test-model", "--days", "1", "--out", str(out), "--quiet"])
+    err = capsys.readouterr().err
+    assert code == 2
+    assert "the run stopped" in err and "Nothing was saved" in err and "--log-requests" in err
+    assert not (out / "replay.json").exists() and not (out / "metrics.json").exists()
+
+
 def test_the_view_command_embeds_a_replay(tmp_path, monkeypatch, capsys):
     sim, _ = finished_sim(days=1)
     replay_path = tmp_path / "replay.json"
@@ -204,3 +213,20 @@ def test_there_is_no_bundled_sample_run():
     viewer = (root / "viewer" / "index.html").read_text()
     assert "load-sample" not in viewer and "sample-replay" not in viewer
     assert "sample-replay" not in (root / "README.md").read_text()
+
+
+def test_retries_are_configurable_and_zero_means_stop_on_the_first_error():
+    parser = cli.build_parser()
+    assert cli._run_spec(parser.parse_args(["run"]), "run").options == {"max_retries": 2}
+    assert cli._run_spec(parser.parse_args(["run", "--retries", "0"]), "run").options == {"max_retries": 0}
+    assert cli._run_spec(parser.parse_args(["live", "--retries", "5"]), "live").options == {"max_retries": 5}
+    assert parser.parse_args(["bench", "survival", "--retries", "0"]).retries == 0
+
+
+def test_the_retry_setting_reaches_the_client(monkeypatch):
+    from valley import bench
+    monkeypatch.delenv("SYSTEM_ONE_API_KEY", raising=False)
+    parser = cli.build_parser()
+    spec = cli._run_spec(parser.parse_args(["run", "--brain", "system-one@http://127.0.0.1:9#m", "--retries", "0"]), "run")
+    brains, instances = bench.build_brains(spec, None)
+    assert instances[0].max_retries == 0

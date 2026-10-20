@@ -9,7 +9,6 @@ from valley.clock import clock_text
 from valley.perception import hunger_word, thirst_word
 from valley.species import SPECIES_ORDER
 
-MAX_FALLBACK_RATE = 0.02
 CALIBRATION_BINS = ("0.0-0.2", "0.2-0.4", "0.4-0.6", "0.6-0.8", "0.8-1.0")
 
 BLUNDER_RULES = (
@@ -49,7 +48,7 @@ def confidence_bin(confidence: float) -> int:
 
 
 class BlunderTally:
-    """Counts decisions, fallbacks, blunder opportunities and blunders per brain while a run happens."""
+    """Counts decisions, blunder opportunities and blunders per brain while a run happens."""
 
     def __init__(self):
         self.brains: dict[str, dict] = {}
@@ -58,8 +57,6 @@ class BlunderTally:
         if brain not in self.brains:
             self.brains[brain] = {
                 "decisions": 0,
-                "fallbacks": 0,
-                "scored": 0,  # decisions that were not fallbacks
                 "rules": {rule: [0, 0] for rule in BLUNDER_RULES},  # rule -> [opportunities, blunders]
                 "calibration": [[0, 0] for _ in CALIBRATION_BINS],  # bin -> [decisions with an opportunity, with a blunder]
             }
@@ -68,10 +65,6 @@ class BlunderTally:
     def record(self, brain: str, species: str, signals: dict, decision) -> None:
         stats = self._stats(brain)
         stats["decisions"] += 1
-        if decision.source == "fallback":
-            stats["fallbacks"] += 1
-            return
-        stats["scored"] += 1
         checks = blunder_check(signals, decision.choice)
         for rule, blundered in checks:
             stats["rules"][rule][0] += 1
@@ -121,7 +114,7 @@ def hesitation_metrics(replay: dict) -> dict:
     decided = hesitated = 0
     for frame in replay["frames"]:
         for row in frame.get("agents", []):
-            if row[3] is not None and row[4] != -1:  # a real, non-fallback decision
+            if row[3] is not None:  # a real decision, not a newborn's empty row
                 decided += 1
                 hesitated += row[5]
     return {"threshold": replay["meta"]["hesitate_below"], "decisions": decided, "hesitated": hesitated,
@@ -138,9 +131,8 @@ def blunder_metrics(tallies: dict) -> dict:
             "opportunities": opportunities,
             "blunders": blunders,
             "overall_blunder_rate": total_blunders / total_opportunities if total_opportunities else None,
-            "blunders_per_1000_decisions": 1000 * total_blunders / stats["scored"] if stats["scored"] else None,
-            "scored_decisions": stats["scored"],
-            "fallbacks": stats["fallbacks"],
+            "blunders_per_1000_decisions": 1000 * total_blunders / stats["decisions"] if stats["decisions"] else None,
+            "decisions": stats["decisions"],
         }
     return out
 
@@ -176,8 +168,6 @@ def cost_metrics(summary: dict, price_per_mtok: float | None = None) -> dict:
         entry = {
             "decisions": decisions,
             "requests": totals.get("requests", 0),
-            "fallbacks": totals.get("fallbacks", 0),
-            "fallback_rate": totals.get("fallbacks", 0) / decisions if decisions else 0.0,
             "retries": totals.get("retries", 0),
             "input_tokens": totals.get("input_tokens", 0),
             "output_tokens": totals.get("output_tokens", 0),
@@ -198,17 +188,12 @@ def compute_metrics(replay: dict, price_per_mtok: float | None = None) -> dict:
     summary = replay["summary"]
     tallies = summary.get("tallies", {})
     cost = cost_metrics(summary, price_per_mtok)
-    decisions = sum(c["decisions"] for c in cost.values())
-    fallbacks = sum(c["fallbacks"] for c in cost.values())
-    rate = fallbacks / decisions if decisions else 0.0
     meta = replay["meta"]
     return {
         "run_id": meta["run_id"],
         "seed": meta["seed"],
         "brains": meta["brains"],
         "hesitate_below": meta["hesitate_below"],
-        "valid": rate <= MAX_FALLBACK_RATE,
-        "fallbacks": {"decisions": decisions, "fallbacks": fallbacks, "rate": rate},
         "survival": survival_metrics(replay),
         "hesitation": hesitation_metrics(replay),
         "blunders": blunder_metrics(tallies),

@@ -11,12 +11,16 @@ class DecisionRequest:
     signals: dict  # never sent to a model
 
 
+class DecisionError(RuntimeError):
+    """A model could not give a valid decision. The run stops: nothing stands in for the model's answer."""
+
+
 @dataclass
 class Decision:
     choice: str
     probabilities: dict  # action key -> probability
     confidence: float
-    source: str  # "model" | "fallback" | "baseline"
+    source: str  # "model" or "baseline"
     latency_ms: float | None = None
 
 

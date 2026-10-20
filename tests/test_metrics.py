@@ -139,17 +139,16 @@ def test_calibration_bins_sum_to_the_total_of_model_decisions_with_an_opportunit
     assert [row["bin"] for row in report] == list(CALIBRATION_BINS)
 
 
-def test_fallbacks_are_excluded_from_blunders_and_counted_separately():
+def test_every_decision_is_counted_and_there_is_no_fallback_bucket():
     tally = BlunderTally()
-    fallback = Decision("rest", {"rest": 1.0}, 0.0, "fallback")
-    tally.record("jev", "rabbit", signals(threat_dist=1), fallback)
     tally.record("jev", "rabbit", signals(threat_dist=1), model("eat", 0.5))
+    tally.record("jev", "rabbit", signals(), model("rest", 0.7))
     stats = tally.brains["jev"]
-    assert stats["decisions"] == 2 and stats["fallbacks"] == 1 and stats["scored"] == 1
+    assert stats["decisions"] == 2 and "fallbacks" not in stats and "scored" not in stats
     assert stats["rules"]["ignored_danger"] == [1, 1]
     assert sum(cell[0] for cell in stats["calibration"]) == 1
     report = blunder_metrics(tally.to_dict())["jev"]
-    assert report["fallbacks"] == 1 and report["scored_decisions"] == 1
+    assert report["decisions"] == 2 and "fallbacks" not in report
 
 
 def test_baseline_brains_get_blunder_counts_but_no_calibration():
@@ -211,7 +210,7 @@ def test_a_run_where_everyone_survives_has_no_extinction():
     assert m["first_extinction"] is None and m["all_species_alive"] is True
 
 
-# -- cost and validity -------------------------------------------------------------------------------
+# -- cost -------------------------------------------------------------------------------
 
 def test_percentile():
     assert percentile([], 0.5) is None
@@ -222,11 +221,11 @@ def test_percentile():
 
 def test_cost_metrics_per_brain():
     summary = {"hour_seconds": {"p50": 0.8, "p95": 1.4},
-               "brain_totals": {"jev": {"decisions": 2000, "requests": 130, "fallbacks": 10, "retries": 3,
+               "brain_totals": {"jev": {"decisions": 2000, "requests": 130, "retries": 3,
                                         "input_tokens": 400_000, "output_tokens": 20_000,
                                         "latencies_ms": [200.0] * 100 + [900.0] * 30}}}
     cost = cost_metrics(summary)["jev"]
-    assert cost["fallback_rate"] == pytest.approx(0.005)
+    assert "fallback_rate" not in cost and cost["retries"] == 3
     assert cost["input_tokens_per_1000_decisions"] == pytest.approx(200_000)
     assert cost["output_tokens_per_1000_decisions"] == pytest.approx(10_000)
     assert cost["latency_ms_p50"] == 200.0 and cost["latency_ms_p95"] == 900.0
@@ -236,31 +235,23 @@ def test_cost_metrics_per_brain():
     assert priced["input_cost"] == pytest.approx(0.8)
 
 
-@pytest.mark.parametrize("fallbacks, valid", [(0, True), (20, True), (21, False), (200, False)])
-def test_a_run_with_more_than_two_percent_fallbacks_is_invalid(fallbacks, valid):
-    summary = {"brain_totals": {"jev": {"decisions": 1000, "fallbacks": fallbacks}}, "hour_seconds": {}}
-    replay = fake_replay([(16, 7, 3)] * 3, summary=summary)
-    assert compute_metrics(replay)["valid"] is valid
-
-
 def test_compute_metrics_has_every_section():
     m = compute_metrics(fake_replay([(16, 7, 3)] * 3))
-    assert set(m) == {"run_id", "seed", "brains", "hesitate_below", "valid", "fallbacks", "survival", "hesitation",
-                      "blunders", "calibration", "cost"}
-    assert m["valid"] is True and m["fallbacks"]["rate"] == 0.0
+    assert set(m) == {"run_id", "seed", "brains", "hesitate_below", "survival", "hesitation", "blunders",
+                      "calibration", "cost"}
 
 
 def test_run_one_writes_metrics_for_a_rules_run(tmp_path):
     spec = RunSpec(seed=7, brains={"rabbit": "rules", "deer": "rules", "wolf": "rules"}, days=5)
     result = run_one(spec, str(tmp_path / "out"))
     metrics = json.loads(open(result["paths"]["metrics"]).read())
-    assert metrics["run_id"] == "run-rules-seed7" and metrics["valid"] is True
+    assert metrics["run_id"] == "run-rules-seed7" and "valid" not in metrics and "fallbacks" not in metrics
     rules = metrics["blunders"]["rules"]
-    assert rules["scored_decisions"] > 0
+    assert rules["decisions"] > 0
     assert set(rules["opportunities"]) == set(BLUNDER_RULES)
     assert metrics["calibration"] == {}  # no model decisions
-    assert metrics["cost"]["rules"]["decisions"] == rules["scored_decisions"]
-    assert result["replay"]["summary"]["valid"] is True
+    assert metrics["cost"]["rules"]["decisions"] == rules["decisions"]
+    assert "valid" not in result["replay"]["summary"]
     assert "rules" in result["replay"]["summary"]["tallies"]
 
 
@@ -268,7 +259,6 @@ def test_hesitation_metrics_count_real_decisions_that_froze():
     frames = [
         {"step": 1, "pop": {}, "agents": [["r1", 1, 1, "eat", 80, 0, 50, 50, [], []],
                                           ["r2", 2, 2, "eat", 30, 1, 50, 50, [], []],
-                                          ["r3", 3, 3, "rest", -1, 0, 50, 50, [], []],      # a fallback
                                           ["r4", 4, 4, None, -1, 0, 50, 50, [], []]]},       # a newborn
         {"step": 2, "pop": {}, "agents": [["r1", 1, 1, "drink", 20, 1, 50, 50, [], []]]},
     ]

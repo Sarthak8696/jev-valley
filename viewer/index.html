@@ -997,7 +997,7 @@ function renderMind(scene) {
     const action = row[ROW.action];
     if (action) {
       const conf = row[ROW.conf];
-      lines.push(`<div class="chose">Chose <b>${esc(ACTION_NAMES[action] || action)}</b>${conf >= 0 ? ` with ${conf}% confidence` : " (the model gave no answer, so it rested)"}${row[ROW.hesitated] ? '<span class="badge">Hesitated and froze</span>' : ""}</div>`);
+      lines.push(`<div class="chose">Chose <b>${esc(ACTION_NAMES[action] || action)}</b>${` with ${conf}% confidence`}${row[ROW.hesitated] ? '<span class="badge">Hesitated and froze</span>' : ""}</div>`);
       const names = store.meta.actions[info.species];
       const probs = row[ROW.probs];
       if (probs && probs.length) {
@@ -1201,9 +1201,16 @@ function startLive(url) {
     if (state.store.lastStep % 24 === 0) renderPopTable();
     lastPanelKey = "";
   });
-  source.addEventListener("end", () => {
-    els.liveText.textContent = "Live run finished and saved";
+  source.addEventListener("end", (e) => {
+    const info = JSON.parse(e.data);
     els.liveBadge.classList.remove("thinking"); source.close();
+    if (info.error) {
+      els.liveText.textContent = "The run stopped";
+      els.notice.hidden = false;
+      els.notice.textContent = "The run stopped because the model gave no usable answer: " + info.error;
+    } else {
+      els.liveText.textContent = "Live run finished and saved";
+    }
   });
   source.onerror = () => { els.liveText.textContent = "Live stream disconnected"; };
 }

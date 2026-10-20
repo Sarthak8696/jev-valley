@@ -88,7 +88,11 @@ Each hour, every animal gets a plain-language view of what it can see and feel, 
 
 The client expects each answer to hold `type`, `choice`, `probabilities` (one per option) and `confidence`, plus `usage.input_tokens` and `usage.output_tokens` for the cost figures. A captured response from a real run will be added here once there is one; every request and response of a run is logged to `requests.jsonl`.
 
-Several animals go into one request (16 by default, `--batch` to change it), each with its own question id, and requests run in parallel. The hour waits for every decision. If a call fails, times out or returns an invalid answer, that animal rests, the decision is marked as a fallback and counted, and a run with more than 2% fallbacks is marked invalid.
+Several animals go into one request (16 by default, `--batch` to change it), each with its own question id, and requests run in parallel. The hour waits for every decision.
+
+**Nothing stands in for the model.** If the key is missing, or a call fails, or any answer is missing or invalid, the run stops at once with a message that names the step, the animal and the error. No animal is made to "rest" or guess. A rate limit (429), a server error (5xx) or a timeout is retried twice first, and the retries are counted in the metrics; `--retries 0` stops on the first error instead. A stopped run saves no replay or metrics, only the request log if it was on, and `bench` keeps the runs that had already finished so you can rerun the same command.
+
+The code overrides a model's choice in two places only. If the chosen action cannot be done at that moment (flee with no wolf in sight, for example), the animal explores instead. And with hesitation on, which is off unless you ask for it, an animal freezes when the model's confidence is below the threshold.
 
 ## Run it
 
@@ -134,7 +138,7 @@ The full specification and the log of every decision made while building it are 
 
 - **Separate random streams.** The map and plant regrowth, the events (catches, litters, names, action order) and the `rules` and `random` brains each have their own stream, all derived from the seed. A brain never touches the world's or the events' stream, and plant regrowth draws the same dice whatever the plants look like, so every brain faces the same valley.
 - **Hourly steps, with waiting.** Every animal decides once per hour, from one snapshot of the world, and the loop waits for all decisions before anything moves. Slow decisions make a run take longer; they never change what happens.
-- **Batching and fallbacks.** Many creatures share a request to keep the cost down. A failed or invalid answer becomes a counted fallback instead of a hidden failure, and 429s, 5xx errors and timeouts are retried twice before that.
+- **Batching, and stopping on errors.** Many creatures share a request to keep the cost down. Any error that survives the retries stops the run, because a made-up decision would not be the model's.
 - **Blunder rules.** Six simple rules mark a choice as clearly bad given what the animal could see, for example ignoring a wolf two tiles away. They are counted while the run happens, because they need information a replay does not store, and confidence is binned to show whether the model is surer when it is right.
 - **A fair baseline.** The `rules` brain scores each action from the same signals and samples through a softmax. It was tuned only through the world's numbers, never weakened, so a model has to beat something reasonable. `random` is the floor.
 - **Everything is traceable.** Each benchmark number comes from `python -m valley bench` and a file under `results/`, and the raw requests and responses are kept.

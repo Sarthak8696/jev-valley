@@ -27,6 +27,8 @@ def _add_model_settings(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--batch", type=int, default=16, help="creatures per request (default 16)")
     parser.add_argument("--workers", type=int, default=4, help="parallel requests per brain (default 4)")
     parser.add_argument("--timeout", type=float, default=30, help="hard timeout in seconds per request")
+    parser.add_argument("--retries", type=int, default=2,
+                        help="retries after a rate limit, server error or timeout before the run stops (default 2; 0 stops on the first error)")
 
 
 def _add_run_arguments(parser: argparse.ArgumentParser, log_default: bool) -> None:
@@ -57,7 +59,8 @@ def _run_spec(args, experiment: str):
         seed=args.seed, brains={"rabbit": prey, "deer": prey, "wolf": wolf}, experiment=experiment, days=args.days,
         width=args.size[0], height=args.size[1], max_creatures=args.max_creatures,
         hesitate_below=args.hesitate_below, batch=args.batch, workers=args.workers, timeout=args.timeout,
-        log_requests=args.log_requests, cache_dir=CACHE_DIR if args.cache else None, run_id=args.run_id)
+        log_requests=args.log_requests, cache_dir=CACHE_DIR if args.cache else None, run_id=args.run_id,
+        options={"max_retries": args.retries})
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -116,10 +119,18 @@ def build_parser() -> argparse.ArgumentParser:
 
 def _run(args) -> int:
     from valley import bench
+    from valley.brains.base import DecisionError
     spec = _run_spec(args, "run")
     out_dir = args.out or os.path.join("runs", spec.id)
     try:
         result = bench.run_one(spec, out_dir, progress=None if args.quiet else bench.stderr_progress(spec))
+    except DecisionError as error:
+        print(f"error: the run stopped. {error}", file=sys.stderr)
+        if args.log_requests:
+            print(f"Nothing was saved except the request log, {os.path.join(out_dir, 'requests.jsonl')}.", file=sys.stderr)
+        else:
+            print("Nothing was saved. Add --log-requests to keep every request and response for diagnosis.", file=sys.stderr)
+        return 2
     except (RuntimeError, ValueError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
@@ -131,6 +142,7 @@ def _run(args) -> int:
 
 
 def _live(args) -> int:
+    from valley.brains.base import DecisionError
     from valley.live import LiveServer
     spec = _run_spec(args, "live")
     out_dir = args.out or os.path.join("runs", spec.id)
@@ -142,7 +154,12 @@ def _live(args) -> int:
     if args.open:
         import webbrowser
         webbrowser.open(server.url)
-    server.run()
+    try:
+        server.run()
+    except DecisionError as error:
+        print(f"error: the run stopped. {error}", file=sys.stderr)
+        print(f"Nothing was saved except the request log, {os.path.join(out_dir, 'requests.jsonl')}.", file=sys.stderr)
+        return 2
     return 0
 
 
@@ -160,12 +177,18 @@ def _view(args) -> int:
 
 def _bench(args) -> int:
     from valley import bench
+    from valley.brains.base import DecisionError
     try:
         outcome = bench.run_experiment(
             args.experiment, base_dir=args.out, seeds=args.seeds or bench.DEFAULT_SEEDS, days=args.days,
             brains=args.brains, jobs=args.jobs, yes=args.yes, force=args.force, summary_only=args.summary_only,
             reuse_survival=args.reuse_survival, thresholds_file=args.thresholds_file,
-            batch=args.batch, workers=args.workers, timeout=args.timeout, price_per_mtok=args.price_per_mtok)
+            batch=args.batch, workers=args.workers, timeout=args.timeout, price_per_mtok=args.price_per_mtok,
+            options={"max_retries": args.retries})
+    except DecisionError as error:
+        print(f"error: the experiment stopped at the first model error. {error}", file=sys.stderr)
+        print("Runs that had already finished are kept. Run the same command again to continue.", file=sys.stderr)
+        return 2
     except (RuntimeError, ValueError, KeyError, FileNotFoundError) as error:
         print(f"error: {error.args[0] if isinstance(error, KeyError) else error}", file=sys.stderr)
         return 2

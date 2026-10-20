@@ -5,7 +5,8 @@ frame, and never sends frames faster than one per `pace` seconds. If decisions t
 longer than that, the next frame goes out as soon as it is ready and the valley's
 clock slows down: decisions are never skipped or guessed. The server binds to
 127.0.0.1 only. When the month ends or every viewer has left, the run is saved as a
-normal replay with its `requests.jsonl`.
+normal replay with its `requests.jsonl`. If a model gives no usable answer the run stops, the
+viewer is told why, and nothing is saved except the request log.
 """
 
 import json
@@ -132,13 +133,21 @@ class LiveServer:
             self._finish()
 
     def _finish(self) -> None:
-        try:
-            self.result = bench.finish_run(self.sim, self.instances, self.spec, self.out_dir)
-            saved = self.result["paths"].get("replay")
-        except BaseException as exc:
-            self.error = self.error or exc
-            saved = None
-        self._publish("end", {"saved": saved, "hours": self.sim.step_no})
+        """Save the run, unless it stopped on an error: then nothing is saved and the viewer is told why."""
+        saved = None
+        if self.error is None:
+            try:
+                self.result = bench.finish_run(self.sim, self.instances, self.spec, self.out_dir)
+                saved = self.result["paths"].get("replay")
+            except BaseException as exc:
+                self.error = exc
+        if self.error is not None:
+            for brain in self.instances:
+                brain.close()
+        payload = {"saved": saved, "hours": self.sim.step_no}
+        if self.error is not None:
+            payload["error"] = str(self.error)
+        self._publish("end", payload)
         self.finished.set()
 
     # -- the HTTP side ----------------------------------------------------

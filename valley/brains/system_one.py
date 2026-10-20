@@ -1,9 +1,10 @@
 """The System One client, used for Jev and for any other server that speaks the same API.
 
 Every creature gets one `Choice` question. Several creatures are batched into one
-request, and requests run in parallel. If a call fails, or an answer is missing or
-invalid, that creature rests and the decision is marked as a fallback and counted.
-The API key travels only in the Authorization header and is never logged.
+request, and requests run in parallel. Nothing stands in for the model: if a call
+fails (after the retries for rate limits, server errors and timeouts), or any answer
+is missing or invalid, a `DecisionError` is raised and the run stops. The API key
+travels only in the Authorization header and is never logged.
 """
 
 import hashlib
@@ -17,7 +18,8 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
-from valley.brains.base import Brain, Decision, DecisionRequest
+from valley.brains.base import Brain, Decision, DecisionError, DecisionRequest
+from valley.clock import clock_text
 
 INSTRUCTIONS = (
     "You are deciding the next action of one wild animal in a valley for the coming hour. "
@@ -38,7 +40,7 @@ BACKOFF_SECONDS = 0.5
 MAX_RETRY_AFTER = 10.0
 RAW_RESPONSE_LOG_LIMIT = 2000
 
-FALLBACK_CHOICE = "rest"
+ERROR_TEXT_LIMIT = 300
 
 
 @dataclass
@@ -105,7 +107,6 @@ class ResponseCache:
 class _Totals:
     decisions: int = 0
     requests: int = 0
-    fallbacks: int = 0
     retries: int = 0
     cache_hits: int = 0
     input_tokens: int = 0
@@ -154,7 +155,7 @@ class SystemOneBrain(Brain):
         with self._lock:
             totals = self._totals
             return {
-                "decisions": totals.decisions, "requests": totals.requests, "fallbacks": totals.fallbacks,
+                "decisions": totals.decisions, "requests": totals.requests,
                 "retries": totals.retries, "cache_hits": totals.cache_hits,
                 "input_tokens": totals.input_tokens, "output_tokens": totals.output_tokens,
                 "latencies_ms": list(totals.latencies_ms),
@@ -210,16 +211,23 @@ class SystemOneBrain(Brain):
                     try:
                         response_json = json.loads(raw_text)
                     except ValueError:
-                        error = "response was not valid JSON"
+                        error = "the response was not valid JSON"
                 else:
-                    error = f"HTTP {result.status}"
-            if response_json is not None and cache_key is not None:
-                self.cache.put(cache_key, response_json)
+                    snippet = self._redact(raw_text.strip())[:ERROR_TEXT_LIMIT]
+                    error = f"HTTP {result.status}" + (f": {snippet}" if snippet else "")
 
-        decisions = self._read_answers(chunk, response_json, latency_ms)
-        self._count(chunk, decisions, response_json, latency_ms, attempts, cached)
+        decisions = None
+        if error is None:
+            decisions, error = self._read_answers(chunk, response_json, latency_ms)
+        if error is None and cache_key is not None and not cached:
+            self.cache.put(cache_key, response_json)  # only answers that were accepted are kept
+        self._count(chunk, decisions, response_json, latency_ms, cached)
         self._log(step, latency_ms, request_id, body, response_json if response_json is not None else raw_text,
                   error, attempts, cached)
+        if error is not None:
+            detail = f" (request id {request_id})" if request_id else ""
+            raise DecisionError(f"{self.name} gave no usable answer at step {step}, {clock_text(step)}: "
+                                f"{self._redact(error)}{detail}")
         return decisions
 
     def _send(self, payload: bytes):
@@ -254,48 +262,55 @@ class SystemOneBrain(Brain):
 
     # -- reading answers --------------------------------------------------
 
-    def _read_answers(self, chunk, response_json, latency_ms) -> list[Decision]:
+    def _read_answers(self, chunk, response_json, latency_ms):
+        """Every creature must have a valid answer. Returns (decisions, None) or (None, what was wrong)."""
         answers = response_json.get("answers") if isinstance(response_json, dict) else None
+        if not isinstance(answers, dict):
+            return None, "the response has no `answers` object"
         single = len(chunk) == 1
         decisions = []
         for request in chunk:
-            answer = answers.get(SINGLE_QUESTION_ID if single else request.creature_id) if isinstance(answers, dict) else None
-            decisions.append(self._to_decision(answer, request.options, latency_ms) or self._fallback(latency_ms))
-        return decisions
+            answer = answers.get(SINGLE_QUESTION_ID if single else request.creature_id)
+            decision, problem = self._to_decision(answer, request.options, latency_ms)
+            if problem is not None:
+                return None, f"the answer for {request.creature_id} is unusable: {problem}"
+            decisions.append(decision)
+        return decisions, None
 
     @staticmethod
-    def _to_decision(answer, options: dict, latency_ms: float) -> Decision | None:
-        """Accept an answer only if it is a `choice` for one of the options with usable probabilities."""
+    def _to_decision(answer, options: dict, latency_ms: float):
+        """Accept an answer only if it is a `choice` for one of the options with usable probabilities.
+
+        Returns (Decision, None) or (None, what was wrong).
+        """
+        if answer is None:
+            return None, "it is missing"
         if not isinstance(answer, dict) or answer.get("type") != "choice":
-            return None
+            return None, "it is not a `choice` answer"
         choice = answer.get("choice")
         if not isinstance(choice, str) or choice not in options:
-            return None
+            return None, f"choice {choice!r} is not one of the options"
         probabilities = answer.get("probabilities")
-        confidence = answer.get("confidence")
         if not isinstance(probabilities, dict) or not probabilities:
-            return None
+            return None, "the probabilities are missing"
         clean = {}
         for key, value in probabilities.items():
             if key not in options or isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
-                return None
+                return None, f"the probability for {key!r} is not valid"
             clean[key] = float(value)
+        confidence = answer.get("confidence")
         if isinstance(confidence, bool) or not isinstance(confidence, (int, float)):
-            return None
-        return Decision(choice, clean, min(1.0, max(0.0, float(confidence))), "model", latency_ms)
-
-    @staticmethod
-    def _fallback(latency_ms: float) -> Decision:
-        return Decision(FALLBACK_CHOICE, {FALLBACK_CHOICE: 1.0}, 0.0, "fallback", latency_ms)
+            return None, "the confidence is missing or not a number"
+        return Decision(choice, clean, min(1.0, max(0.0, float(confidence))), "model", latency_ms), None
 
     # -- bookkeeping ------------------------------------------------------
 
-    def _count(self, chunk, decisions, response_json, latency_ms, attempts, cached) -> None:
+    def _count(self, chunk, decisions, response_json, latency_ms, cached) -> None:
         usage = response_json.get("usage") if isinstance(response_json, dict) else None
         with self._lock:
             totals = self._totals
-            totals.decisions += len(chunk)
-            totals.fallbacks += sum(1 for d in decisions if d.source == "fallback")
+            if decisions is not None:
+                totals.decisions += len(chunk)
             if cached:
                 totals.cache_hits += 1
                 return

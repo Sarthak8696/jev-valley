@@ -200,13 +200,32 @@ def test_a_confident_creature_does_not_hesitate():
     assert not rabbit.hesitated and (rabbit.x, rabbit.y) == (6, 5)
 
 
-def test_fallback_decisions_are_not_treated_as_hesitation():
+def test_an_error_from_a_brain_stops_the_run_and_nothing_is_decided_for_it():
+    from valley.brains.base import Brain, DecisionError
+
+    class FailsOnHour3(ScriptedBrain):
+        def decide(self, requests, step=0):
+            if step == 3:
+                raise DecisionError("the model gave no usable answer")
+            return super().decide(requests, step)
+
     rabbit = make_creature("rabbit", 5, 5, cid="r1")
     world = world_from_rows(open_rows(), plants="none")
-    brain = ScriptedBrain(default="rest", confidence=0.0, source="fallback")
-    sim = Simulation(1, {s: brain for s in SPECIES}, world=world, creatures=[rabbit], hesitate_below=0.5)
-    frame = sim.step()
-    assert not rabbit.hesitated and frame["agents"][0][4] == -1 and frame["agents"][0][5] == 0
+    sim = Simulation(1, {s: FailsOnHour3(default="rest") for s in SPECIES}, world=world, creatures=[rabbit])
+    sim.step()
+    sim.step()
+    frames_before = len(sim.frames)
+    with pytest.raises(DecisionError, match="no usable answer"):
+        sim.step()
+    assert len(sim.frames) == frames_before  # the failed hour was never recorded
+    assert rabbit.action in (None, "rest") and not rabbit.hesitated
+
+
+def test_decisions_are_only_ever_the_models_or_a_named_baselines():
+    sim = random_sim(7, days=1)
+    sim.run()
+    sources = {c.decision.source for c in sim.creatures.values() if c.decision is not None}
+    assert sources == {"baseline"}
 
 
 def test_food_snapshots_and_diffs():

@@ -216,6 +216,8 @@ def test_a_failing_brain_does_not_hang_the_stream(tmp_path, servers, monkeypatch
     conn.close()
     assert [e for e, _ in events] == ["meta", "end"]
     assert isinstance(server.error, RuntimeError)
+    assert "brain exploded" in events[-1][1]["error"] and events[-1][1]["saved"] is None
+    assert server.result is None and not (tmp_path / "out" / "replay.json").exists()
 
 
 def test_requests_log_is_enabled_for_live_runs_by_default():
@@ -224,3 +226,21 @@ def test_requests_log_is_enabled_for_live_runs_by_default():
     assert args.log_requests is True
     assert cli.build_parser().parse_args(["run"]).log_requests is False
     assert cli.build_parser().parse_args(["live", "--no-log-requests"]).log_requests is False
+
+
+def test_a_model_error_during_a_live_run_stops_it_tells_the_viewer_and_saves_nothing(tmp_path, servers):
+    unreachable = "system-one@http://127.0.0.1:9#test-model"  # nothing listens on port 9
+    spec = RunSpec(seed=19, brains={k: unreachable for k in ("rabbit", "deer", "wolf")}, experiment="live",
+                   days=1, log_requests=True)
+    server = LiveServer(spec, str(tmp_path / "out"), port=0, pace=0.0, out=lambda *a: None)
+    servers.append(server)
+    server.start()
+    conn, response = open_stream(server)
+    events = list(read_events(response))
+    conn.close()
+    assert [e for e, _ in events] == ["meta", "end"]  # not a single hour was played
+    end = events[-1][1]
+    assert "connection failed" in end["error"] and "step 1" in end["error"] and end["saved"] is None
+    assert server.finished.wait(10) and server.result is None
+    assert not (tmp_path / "out" / "replay.json").exists()
+    assert (tmp_path / "out" / "requests.jsonl").exists()

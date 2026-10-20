@@ -5,7 +5,7 @@ import time
 import pytest
 
 from valley.brains import make_brain
-from valley.brains.base import DecisionRequest
+from valley.brains.base import DecisionError, DecisionRequest
 from valley.brains.system_one import (
     BATCH_SENTENCE, INSTRUCTIONS, HttpResult, ResponseCache, SystemOneBrain, TransportError,
     make_system_one_brain,
@@ -175,7 +175,7 @@ def test_a_valid_answer_is_parsed():
     assert d.latency_ms is not None and d.latency_ms >= 0
     summary = b.summary()
     assert summary["input_tokens"] == 120 and summary["output_tokens"] == 9
-    assert summary["decisions"] == 1 and summary["requests"] == 1 and summary["fallbacks"] == 0
+    assert summary["decisions"] == 1 and summary["requests"] == 1 and "fallbacks" not in summary
 
 
 def bad_answer_cases():
@@ -197,21 +197,32 @@ def bad_answer_cases():
 
 
 @pytest.mark.parametrize("case", list(bad_answer_cases()))
-def test_missing_or_invalid_answers_become_fallbacks(case):
+def test_a_missing_or_invalid_answer_stops_the_run(case):
     bad = bad_answer_cases()[case]
     answers = {} if bad is None else {"action": bad}
     b = brain(FakeTransport(lambda body, n: ok(answers)))
-    [d] = b.decide([request()])
-    assert (d.choice, d.probabilities, d.confidence, d.source) == ("rest", {"rest": 1.0}, 0.0, "fallback")
-    assert b.summary()["fallbacks"] == 1
+    with pytest.raises(DecisionError, match="r1"):
+        b.decide([request()])
+    assert b.summary()["decisions"] == 0  # nothing was accepted
 
 
-def test_only_the_bad_answer_in_a_batch_falls_back():
+def test_one_bad_answer_in_a_batch_stops_the_run_and_names_the_animal():
     def handler(body, n):
         return ok({"r1": answer("eat"), "r2": {"type": "choice", "choice": "nope"}, "r3": answer("hide")})
 
-    decisions = brain(FakeTransport(handler)).decide([request("r1"), request("r2"), request("r3")])
-    assert [(d.choice, d.source) for d in decisions] == [("eat", "model"), ("rest", "fallback"), ("hide", "model")]
+    with pytest.raises(DecisionError, match=r"answer for r2 is unusable: choice 'nope' is not one of the options"):
+        brain(FakeTransport(handler)).decide([request("r1"), request("r2"), request("r3")])
+
+
+def test_a_response_without_answers_stops_the_run():
+    with pytest.raises(DecisionError, match="no `answers` object"):
+        brain(FakeTransport(lambda body, n: HttpResult(200, {}, b"{}"))).decide([request()])
+
+
+def test_nothing_is_ever_decided_for_the_model():
+    """No code path returns a decision the model did not give."""
+    import valley.brains.system_one as module
+    assert not hasattr(module, "FALLBACK_CHOICE") and not hasattr(SystemOneBrain, "_fallback")
 
 
 def test_confidence_outside_zero_to_one_is_clamped():
@@ -219,14 +230,15 @@ def test_confidence_outside_zero_to_one_is_clamped():
     assert brain(t).decide([request()])[0].confidence == 1.0
 
 
-def test_malformed_json_is_a_fallback_and_logged_as_an_error(tmp_path):
+def test_malformed_json_stops_the_run_and_is_logged_as_an_error(tmp_path):
     log = tmp_path / "requests.jsonl"
     t = FakeTransport(lambda body, n: HttpResult(200, {}, b"<html>oops</html>"))
     b = brain(t, log_path=str(log))
-    assert b.decide([request()])[0].source == "fallback"
+    with pytest.raises(DecisionError, match="not valid JSON"):
+        b.decide([request()])
     b.close()
     line = json.loads(log.read_text().splitlines()[0])
-    assert line["error"] == "response was not valid JSON" and line["response"] == "<html>oops</html>"
+    assert line["error"] == "the response was not valid JSON" and line["response"] == "<html>oops</html>"
 
 
 def test_usage_is_optional():
@@ -237,25 +249,39 @@ def test_usage_is_optional():
 
 # -- failures and retries ---------------------------------------------------------------
 
-def test_a_client_error_falls_back_without_retrying():
+def test_a_client_error_stops_the_run_without_retrying_and_shows_the_servers_message():
     t = FakeTransport(lambda body, n: HttpResult(400, {}, b'{"error":"bad"}'))
     sleeps = []
     b = brain(t, sleep=sleeps.append)
-    decisions = b.decide([request("r1"), request("r2")])
-    assert [d.source for d in decisions] == ["fallback", "fallback"]
+    with pytest.raises(DecisionError, match=r"HTTP 400: .*bad"):
+        b.decide([request("r1"), request("r2")])
     assert len(t.calls) == 1 and sleeps == []
-    assert b.summary()["retries"] == 0 and b.summary()["fallbacks"] == 2
+    assert b.summary()["retries"] == 0
 
 
-def test_a_server_error_is_retried_twice_with_backoff_and_then_falls_back():
+def test_an_unauthorised_key_stops_the_run_at_once():
+    t = FakeTransport(lambda body, n: HttpResult(401, {}, b'{"error":"invalid api key"}'))
+    with pytest.raises(DecisionError, match="HTTP 401"):
+        brain(t).decide([request()])
+    assert len(t.calls) == 1
+
+
+def test_a_server_error_is_retried_twice_with_backoff_and_then_stops_the_run():
     t = FakeTransport(lambda body, n: HttpResult(503, {}, b"down"))
     sleeps = []
     b = brain(t, sleep=sleeps.append)
-    [d] = b.decide([request()])
-    assert d.source == "fallback"
+    with pytest.raises(DecisionError, match="HTTP 503"):
+        b.decide([request()])
     assert len(t.calls) == 3
     assert sleeps == [0.5, 1.0]
     assert b.summary()["retries"] == 2
+
+
+def test_with_no_retries_the_first_error_stops_the_run():
+    t = FakeTransport(lambda body, n: HttpResult(429, {}, b"slow down"))
+    with pytest.raises(DecisionError, match="HTTP 429"):
+        brain(t, max_retries=0).decide([request()])
+    assert len(t.calls) == 1
 
 
 def test_a_429_is_retried_and_can_then_succeed():
@@ -266,7 +292,7 @@ def test_a_429_is_retried_and_can_then_succeed():
     b = brain(t)
     [d] = b.decide([request()])
     assert d.source == "model" and len(t.calls) == 2
-    assert b.summary()["retries"] == 1 and b.summary()["fallbacks"] == 0
+    assert b.summary()["retries"] == 1
 
 
 def test_retry_after_is_honoured_up_to_a_limit():
@@ -287,19 +313,36 @@ def test_a_timeout_is_retried():
     assert len(t.calls) == 3 and b.summary()["retries"] == 2
 
 
-def test_other_connection_errors_are_not_retried():
+def test_other_connection_errors_are_not_retried_and_stop_the_run():
     t = FakeTransport(lambda body, n: TransportError("connection failed: refused"))
     b = brain(t)
-    assert b.decide([request()])[0].source == "fallback"
+    with pytest.raises(DecisionError, match="connection failed: refused"):
+        b.decide([request()])
     assert len(t.calls) == 1 and b.summary()["retries"] == 0
 
 
-def test_a_failed_request_marks_every_creature_in_the_batch_as_a_fallback():
+def test_a_failed_request_gives_no_decisions_at_all_for_its_batch():
     t = FakeTransport(lambda body, n: HttpResult(500, {}, b""))
     b = brain(t, max_retries=0)
-    decisions = b.decide([request(f"r{i}") for i in range(5)])
-    assert all(d.source == "fallback" for d in decisions)
-    assert b.summary()["fallbacks"] == 5 and b.summary()["decisions"] == 5
+    with pytest.raises(DecisionError):
+        b.decide([request(f"r{i}") for i in range(5)])
+    assert b.summary()["decisions"] == 0
+
+
+def test_the_error_names_the_step_and_the_request_id():
+    t = FakeTransport(lambda body, n: HttpResult(502, {"x-typesafe-request-id": "req_42"}, b"bad gateway"))
+    with pytest.raises(DecisionError) as info:
+        brain(t, max_retries=0).decide([request()], step=14)
+    text = str(info.value)
+    assert "step 14" in text and "Day 1, 8 pm" in text and "req_42" in text and "HTTP 502" in text
+
+
+def test_a_rejected_answer_is_not_cached(tmp_path):
+    cache = ResponseCache(str(tmp_path / "cache.jsonl"))
+    b = brain(FakeTransport(lambda body, n: ok({"action": {"type": "choice", "choice": "nope"}})), cache=cache)
+    with pytest.raises(DecisionError):
+        b.decide([request()])
+    assert not (tmp_path / "cache.jsonl").exists()
 
 
 # -- the log and secrets ----------------------------------------------------------------
@@ -329,11 +372,12 @@ def test_the_api_key_never_appears_in_the_log_or_in_errors(tmp_path):
     log = tmp_path / "requests.jsonl"
     leaky = TransportError(f"proxy rejected Bearer {KEY}")
     b = brain(FakeTransport(lambda body, n: leaky), log_path=str(log))
-    decisions = b.decide([request()])
+    with pytest.raises(DecisionError) as info:
+        b.decide([request()])
     b.close()
     text = log.read_text()
     assert KEY not in text and "[redacted]" in text
-    assert KEY not in json.dumps([d.__dict__ for d in decisions])
+    assert KEY not in str(info.value)
     assert KEY not in json.dumps(b.summary())
 
 
@@ -341,9 +385,10 @@ def test_the_key_is_redacted_even_if_a_server_echoes_it(tmp_path):
     log = tmp_path / "requests.jsonl"
     t = FakeTransport(lambda body, n: HttpResult(401, {}, f"invalid key {KEY}".encode()))
     b = brain(t, log_path=str(log))
-    b.decide([request()])
+    with pytest.raises(DecisionError) as info:
+        b.decide([request()])
     b.close()
-    assert KEY not in log.read_text()
+    assert KEY not in log.read_text() and KEY not in str(info.value)
 
 
 def test_no_log_is_written_unless_asked_for(tmp_path, monkeypatch):

@@ -43,6 +43,7 @@ class Simulation:
         self.living: list[Creature] = []
         self.occupied: dict[tuple[int, int], Creature] = {}
         self.hour_seconds: list[float] = []
+        self.cancelled = False
         self._id_counts = {key: 0 for key in SPECIES}
         self._name_counts: dict[str, int] = {}
         self._last_food: list[int] | None = None
@@ -204,8 +205,7 @@ class Simulation:
                 creature.executed = decision.choice
                 if self.tally is not None:
                     self.tally.record(brain.name, creature.species, request.signals, decision)
-                if (self.hesitate_below is not None and decision.source != "fallback"
-                        and decision.confidence < self.hesitate_below):
+                if self.hesitate_below is not None and decision.confidence < self.hesitate_below:
                     creature.executed = "rest"
                     creature.hesitated = True
                     creature.remember(self.step_no, HESITATED)
@@ -221,9 +221,12 @@ class Simulation:
                 self.kill(creature, "thirst")
                 self.events.append(f"{creature.name} the {creature.species} died of thirst")
 
-    def run(self, on_frame=None) -> list[dict]:
-        """Run until the month ends or nobody is left alive."""
+    def run(self, on_frame=None, cancel=None) -> list[dict]:
+        """Run until the month ends or nobody is left alive. `cancel`, if given, is asked before every hour."""
         while self.step_no < self.steps and any(c.alive for c in self.living):
+            if cancel is not None and cancel():
+                self.cancelled = True
+                break
             frame = self.step()
             if on_frame is not None:
                 on_frame(frame)
@@ -236,7 +239,7 @@ class Simulation:
         decided = creature.action is not None and creature.born < self.step_no
         if decided:
             decision = creature.decision
-            confidence = -1 if decision.source == "fallback" else round(decision.confidence * 100)
+            confidence = round(decision.confidence * 100)
             probabilities = [round(100 * decision.probabilities.get(a, 0.0)) for a in spec.actions]
             action = creature.action
         else:

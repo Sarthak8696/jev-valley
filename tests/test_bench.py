@@ -210,20 +210,19 @@ def test_resolve_dir_falls_back_when_survival_is_missing(tmp_path):
 
 # -- summaries ---------------------------------------------------------------------------------
 
-def fake_metrics(valid=True, hours=720, alive=True, rate=0.1, seed=1):
+def fake_metrics(hours=720, alive=True, rate=0.1, seed=1):
     return {
-        "run_id": f"x-seed{seed}", "seed": seed, "brains": {}, "hesitate_below": None, "valid": valid,
-        "fallbacks": {"decisions": 100, "fallbacks": 0 if valid else 50, "rate": 0.0 if valid else 0.5},
+        "run_id": f"x-seed{seed}", "seed": seed, "brains": {}, "hesitate_below": None,
         "survival": {"hours_survived": hours, "first_extinction": None, "all_species_alive": alive,
                      "final_population": {"rabbit": 10, "deer": 4, "wolf": 2},
                      "mean_population": {"rabbit": 12.0, "deer": 5.0, "wolf": 2.5}, "births": {}, "deaths_by_cause": {}},
         "hesitation": {"threshold": None, "decisions": 100, "hesitated": 0, "rate": None},
         "blunders": {"jev": {"opportunities": {"ignored_danger": 10}, "blunders": {"ignored_danger": int(rate * 10)},
                              "overall_blunder_rate": rate, "blunders_per_1000_decisions": 5.0,
-                             "scored_decisions": 100, "fallbacks": 0}},
+                             "decisions": 100}},
         "calibration": {"jev": [{"bin": b, "decisions_with_opportunity": 10, "blunder_rate": rate}
                                 for b in ("0.0-0.2", "0.2-0.4", "0.4-0.6", "0.6-0.8", "0.8-1.0")]},
-        "cost": {"jev": {"decisions": 100, "requests": 10, "fallbacks": 0 if valid else 50, "fallback_rate": 0.0,
+        "cost": {"jev": {"decisions": 100, "requests": 10,
                          "retries": 1, "input_tokens": 1000, "output_tokens": 100,
                          "input_tokens_per_1000_decisions": 10000.0, "output_tokens_per_1000_decisions": 1000.0,
                          "latency_ms_p50": 200.0, "latency_ms_p95": 400.0,
@@ -231,23 +230,24 @@ def fake_metrics(valid=True, hours=720, alive=True, rate=0.1, seed=1):
     }
 
 
-def test_invalid_runs_are_left_out_of_medians_but_still_counted_and_listed():
+def test_every_finished_run_is_counted_and_listed():
     runs = [{"metrics": fake_metrics(hours=600, rate=0.1)}, {"metrics": fake_metrics(hours=720, rate=0.3)},
-            {"metrics": fake_metrics(valid=False, hours=10, alive=False, rate=0.9)}]
+            {"metrics": fake_metrics(hours=720, alive=False, rate=0.2)}]
     group = aggregate_group(runs)
-    assert group["runs"] == 3 and group["valid_runs"] == 2
-    assert group["median_hours_survived"] == 660
+    assert group["runs"] == 3 and "valid_runs" not in group
+    assert group["median_hours_survived"] == 720
     assert group["runs_all_species_alive"] == 2
     assert group["mean_blunder_rate"] == pytest.approx(0.2)
-    assert group["blunder_rates"] == [0.1, 0.3]
-    assert group["cost"]["jev"]["decisions"] == 200
-    assert group["calibration"]["jev"][0]["decisions_with_opportunity"] == 20
+    assert group["blunder_rates"] == [0.1, 0.3, 0.2]
+    assert group["cost"]["jev"]["decisions"] == 300 and "fallback_rate" not in group["cost"]["jev"]
+    assert group["calibration"]["jev"][0]["decisions_with_opportunity"] == 30
     summary = {"experiment": "survival", "seeds": [1], "days": 30, "groups": {"jev": group}, "missing": [],
                "runs": [{"run_id": f"survival-jev-seed{i}", "group": "jev", "reused_from": None, "metrics": r["metrics"]}
                         for i, r in enumerate(runs)]}
     md = render_markdown(summary)
-    assert "| jev | 2/3 |" in md
-    assert "survival-jev-seed2 | **no**" in md
+    assert "| jev | 3 | 720 | 2/3 |" in md
+    assert "survival-jev-seed2 | 720 |" in md
+    assert "valid" not in md.lower().replace("invalid", "") and "fallback" not in md.lower()
 
 
 def test_the_markdown_has_no_hand_typed_numbers_only_table_cells():
@@ -337,3 +337,54 @@ def test_the_bench_command_exits_non_zero_when_not_confirmed(tmp_path, monkeypat
     code = cli.main(["bench", "survival", "--brains", "system-one@http://127.0.0.1:9#test-model", "--seeds", "3", "--days", "2", "--out", str(tmp_path)])
     assert code == 1
     assert "not confirmed" in capsys.readouterr().out
+
+
+# -- any model error stops the experiment ------------------------------------------------------------
+
+UNREACHABLE = "system-one@http://127.0.0.1:9#test-model"  # nothing listens on port 9, so every request is refused at once
+
+
+def test_bench_stops_at_the_first_model_error_and_writes_no_summary(tmp_path, monkeypatch):
+    from valley.brains.base import DecisionError
+    monkeypatch.delenv("SYSTEM_ONE_API_KEY", raising=False)
+    with pytest.raises(DecisionError, match="connection failed"):
+        run_experiment("survival", base_dir=str(tmp_path), seeds=[3, 7], days=2, brains=[UNREACHABLE],
+                       out=quiet, yes=True)
+    assert not (tmp_path / "survival" / "summary.md").exists()
+    for seed in (3, 7):  # a run that hit the error leaves no results behind
+        assert not (tmp_path / "survival" / f"survival-system-one-seed{seed}" / "metrics.json").exists()
+
+
+def test_runs_that_finished_before_the_error_are_kept(tmp_path):
+    from valley.brains.base import DecisionError
+    with pytest.raises(DecisionError):
+        run_experiment("survival", base_dir=str(tmp_path), seeds=[3], days=2, brains=["rules", UNREACHABLE],
+                       out=quiet, yes=True)
+    assert (tmp_path / "survival" / "survival-rules-seed3" / "metrics.json").exists()
+
+
+def test_parallel_runs_all_stop_when_one_fails(tmp_path):
+    from valley.brains.base import DecisionError
+    with pytest.raises(DecisionError):
+        run_experiment("survival", base_dir=str(tmp_path), seeds=[3, 7, 11], days=2, brains=[UNREACHABLE],
+                       out=quiet, yes=True, jobs=3)
+    finished = list((tmp_path / "survival").glob("*/metrics.json")) if (tmp_path / "survival").exists() else []
+    assert finished == []
+
+
+def test_run_one_stops_on_a_model_error_and_writes_no_results(tmp_path):
+    from valley.brains.base import DecisionError
+    spec = RunSpec(seed=7, brains={k: UNREACHABLE for k in ("rabbit", "deer", "wolf")}, days=2, log_requests=True)
+    with pytest.raises(DecisionError, match="step 1"):
+        bench.run_one(spec, str(tmp_path / "out"))
+    assert not (tmp_path / "out" / "replay.json").exists() and not (tmp_path / "out" / "metrics.json").exists()
+    line = json.loads((tmp_path / "out" / "requests.jsonl").read_text().splitlines()[0])
+    assert "connection failed" in line["error"]  # the log is kept so the error can be read
+
+
+def test_the_bench_command_reports_a_model_error_and_exits_non_zero(tmp_path, capsys):
+    code = cli.main(["bench", "survival", "--brains", UNREACHABLE, "--seeds", "3", "--days", "2",
+                     "--out", str(tmp_path), "--yes"])
+    err = capsys.readouterr().err
+    assert code == 2
+    assert "stopped at the first model error" in err and "Run the same command again" in err

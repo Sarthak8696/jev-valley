@@ -11,6 +11,7 @@ import json
 import os
 import statistics
 import sys
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
@@ -31,6 +32,10 @@ DEFAULT_BRAINS = {"survival": ("jev", "rules", "random"), "hesitation": ("jev",)
 DEFAULT_SEEDS = BENCH_SEEDS[:5]
 HESITATION_LEVELS = ("off", "p10", "p25")
 DECISIONS_PER_CREATURE_HOUR = 1.5  # the spec's estimate: starting creatures x steps x 1.5
+
+
+class RunCancelled(Exception):
+    """A run was told to stop because another run in the same experiment failed."""
 
 
 @dataclass
@@ -125,7 +130,6 @@ def finish_run(sim: Simulation, instances: list, spec: RunSpec, out_dir: str | N
         brain.close()
     replay = build_replay(sim, spec.id)
     metrics = compute_metrics(replay, spec.price_per_mtok)
-    replay["summary"]["valid"] = metrics["valid"]
     paths, replay_bytes = {}, None
     if out_dir:
         paths["replay"] = os.path.join(out_dir, "replay.json")
@@ -139,14 +143,20 @@ def finish_run(sim: Simulation, instances: list, spec: RunSpec, out_dir: str | N
     return {"sim": sim, "replay": replay, "metrics": metrics, "paths": paths, "replay_bytes": replay_bytes}
 
 
-def run_one(spec: RunSpec, out_dir: str | None, progress=None) -> dict:
-    """Run one simulation and write `replay.json`, `metrics.json` and, if asked, `requests.jsonl`."""
+def run_one(spec: RunSpec, out_dir: str | None, progress=None, cancel=None) -> dict:
+    """Run one simulation and write `replay.json`, `metrics.json` and, if asked, `requests.jsonl`.
+
+    If a model gives no usable answer, a `DecisionError` stops the run and no results are written (the
+    request log, if enabled, stays so the error can be read). `cancel` is checked every hour.
+    """
     sim, instances = prepare_run(spec, out_dir)
     try:
-        sim.run(on_frame=progress)
+        sim.run(on_frame=progress, cancel=cancel)
     finally:
         for brain in instances:
             brain.close()
+    if sim.cancelled:
+        raise RunCancelled(spec.id)
     return finish_run(sim, instances, spec, out_dir)
 
 
@@ -277,12 +287,20 @@ def run_experiment(experiment: str, base_dir: str = "results", seeds=DEFAULT_SEE
                 out("not confirmed; nothing was run. Pass --yes to skip this question.")
                 return {"specs": specs, "ran": [], "aborted": True}
 
+        stop = threading.Event()  # set by the first failure so that parallel runs stop at their next hour
+
         def work(item):
             index, spec = item
-            result = run_one(spec, run_dir(base_dir, spec), progress=None)
-            metrics = result["metrics"]
-            out(f"[{index}/{len(todo)}] {spec.id}: {result['sim'].step_no} hours, "
-                f"{'valid' if metrics['valid'] else 'INVALID'}")
+            if stop.is_set():
+                return None
+            try:
+                result = run_one(spec, run_dir(base_dir, spec), progress=None, cancel=stop.is_set)
+            except RunCancelled:
+                return None
+            except BaseException:
+                stop.set()
+                raise
+            out(f"[{index}/{len(todo)}] {spec.id}: {result['sim'].step_no} hours")
             return spec.id
 
         items = list(enumerate(todo, start=1))
@@ -291,6 +309,7 @@ def run_experiment(experiment: str, base_dir: str = "results", seeds=DEFAULT_SEE
                 ran = list(pool.map(work, items))
         else:
             ran = [work(item) for item in items]
+        ran = [r for r in ran if r is not None]
 
     summary = summarise(base_dir, experiment, specs, reuse_survival, days)
     out(f"wrote {os.path.join(base_dir, experiment, 'summary.md')}")
@@ -338,9 +357,8 @@ def _population_series(runs: list[dict], steps: int) -> dict:
 
 
 def aggregate_group(runs: list[dict]) -> dict:
-    """Totals and medians for one group of runs. Medians use only valid runs."""
-    valid = [r for r in runs if r["metrics"]["valid"]]
-    metrics = [r["metrics"] for r in valid]
+    """Totals and medians for one group of runs."""
+    metrics = [r["metrics"] for r in runs]
     blunder_rates = [b["overall_blunder_rate"] for m in metrics for b in m["blunders"].values()
                      if b["overall_blunder_rate"] is not None]
     rules: dict[str, list] = {}
@@ -361,10 +379,10 @@ def aggregate_group(runs: list[dict]) -> dict:
     cost: dict[str, dict] = {}
     for m in metrics:
         for brain, c in m["cost"].items():
-            entry = cost.setdefault(brain, {"decisions": 0, "requests": 0, "fallbacks": 0, "retries": 0,
+            entry = cost.setdefault(brain, {"decisions": 0, "requests": 0, "retries": 0,
                                             "input_tokens": 0, "output_tokens": 0, "p50": [], "p95": [],
                                             "hour_p50": [], "hour_p95": [], "input_cost": []})
-            for key in ("decisions", "requests", "fallbacks", "retries", "input_tokens", "output_tokens"):
+            for key in ("decisions", "requests", "retries", "input_tokens", "output_tokens"):
                 entry[key] += c[key]
             entry["p50"].append(c["latency_ms_p50"])
             entry["p95"].append(c["latency_ms_p95"])
@@ -376,8 +394,7 @@ def aggregate_group(runs: list[dict]) -> dict:
     for brain, e in cost.items():
         n = e["decisions"]
         cost_out[brain] = {
-            "decisions": n, "requests": e["requests"], "fallbacks": e["fallbacks"], "retries": e["retries"],
-            "fallback_rate": e["fallbacks"] / n if n else 0.0,
+            "decisions": n, "requests": e["requests"], "retries": e["retries"],
             "input_tokens_per_1000_decisions": 1000 * e["input_tokens"] / n if n else None,
             "output_tokens_per_1000_decisions": 1000 * e["output_tokens"] / n if n else None,
             "latency_ms_p50": _median(e["p50"]), "latency_ms_p95": _median(e["p95"]),
@@ -388,7 +405,6 @@ def aggregate_group(runs: list[dict]) -> dict:
     thresholds = {m["hesitate_below"] for m in metrics if m["hesitate_below"] is not None}
     return {
         "runs": len(runs),
-        "valid_runs": len(valid),
         "median_hours_survived": _median(m["survival"]["hours_survived"] for m in metrics),
         "runs_all_species_alive": sum(m["survival"]["all_species_alive"] for m in metrics),
         "mean_population": {key: _mean(m["survival"]["mean_population"][key] for m in metrics)
@@ -440,8 +456,7 @@ def summarise(base_dir: str, experiment: str, specs: list[RunSpec], reuse_surviv
 def _draw_charts(out_dir: str, groups: dict, aggregates: dict, steps: int) -> None:
     chart_dir = os.path.join(out_dir, "charts")
     os.makedirs(chart_dir, exist_ok=True)
-    plotted = {g: [r for r in items if r["metrics"]["valid"]] for g, items in groups.items()}
-    plotted = {g: items for g, items in plotted.items() if items}
+    plotted = {g: items for g, items in groups.items() if items}
     series = {g: _population_series(items, steps) for g, items in plotted.items()}
     charts.population_chart(os.path.join(chart_dir, "population.svg"), series,
                             {g: len(items) for g, items in plotted.items()})
@@ -475,19 +490,19 @@ def render_markdown(summary: dict) -> str:
     seeds = ", ".join(str(s) for s in summary["seeds"])
     parts = [f"# {summary['experiment'].capitalize()} results", "",
              f"Seeds: {seeds}. Length: {summary['days']} days ({summary['days'] * 24} valley hours). "
-             "Medians and charts use valid runs only (at most 2% fallbacks); every run is listed under *All runs*.", ""]
+             "Every run listed here finished: a run that hits a model error stops and is not recorded.", ""]
     if not groups:
         return "\n".join(parts + ["No runs have finished yet.", ""])
 
     hesitating = any(a["hesitation_threshold"] is not None for a in groups.values())
-    headers = ["Brain", "Valid runs", "Median hours survived", "All species alive at the end",
+    headers = ["Brain", "Runs", "Median hours survived", "All species alive at the end",
                "Mean rabbits", "Mean deer", "Mean wolves"]
     if hesitating:
         headers += ["Hesitation threshold", "Share of decisions frozen"]
     rows = []
     for name, a in groups.items():
-        row = [name, f"{a['valid_runs']}/{a['runs']}", _num(a["median_hours_survived"], 0),
-               f"{a['runs_all_species_alive']}/{a['valid_runs']}",
+        row = [name, f"{a['runs']}", _num(a["median_hours_survived"], 0),
+               f"{a['runs_all_species_alive']}/{a['runs']}",
                _num(a["mean_population"]["rabbit"]), _num(a["mean_population"]["deer"]),
                _num(a["mean_population"]["wolf"])]
         if hesitating:
@@ -526,17 +541,17 @@ def render_markdown(summary: dict) -> str:
             if not c["requests"] and not c["decisions"]:
                 continue
             cost_rows.append([
-                name, brain, f"{c['decisions']:,}", f"{c['requests']:,}", _pct(c["fallback_rate"], 2), f"{c['retries']:,}",
+                name, brain, f"{c['decisions']:,}", f"{c['requests']:,}", f"{c['retries']:,}",
                 _num(c["input_tokens_per_1000_decisions"], 0), _num(c["output_tokens_per_1000_decisions"], 0),
                 f"{_num(c['latency_ms_p50'], 0)} / {_num(c['latency_ms_p95'], 0)}",
                 f"{_num(c['seconds_per_valley_hour_p50'], 2)} / {_num(c['seconds_per_valley_hour_p95'], 2)}",
                 "-" if c["input_cost_total"] is None else f"{c['input_cost_total']:.2f}",
             ])
     parts += ["## Cost and speed", "",
-              "Totals over valid runs. Latency is per request, and the valley-hour pace is the wait for all of "
+              "Totals over all runs. Latency is per request, and the valley-hour pace is the wait for all of "
               "an hour's decisions. Baseline brains make no requests. The last column is input-token cost and "
               "appears only when a price was given.", "",
-              _table(["Group", "Brain", "Decisions", "Requests", "Fallback rate", "Retries",
+              _table(["Group", "Brain", "Decisions", "Requests", "Retries",
                       "Input tokens per 1,000", "Output tokens per 1,000", "Latency p50 / p95 (ms)",
                       "Seconds per hour p50 / p95", "Input cost"], cost_rows), ""]
 
@@ -545,12 +560,10 @@ def render_markdown(summary: dict) -> str:
         m = run["metrics"]
         pop = m["survival"]["final_population"]
         rows.append([run["run_id"] + (f" (from {run['reused_from']})" if run["reused_from"] else ""),
-                     "yes" if m["valid"] else "**no**", m["survival"]["hours_survived"],
-                     f"{pop['rabbit']} / {pop['deer']} / {pop['wolf']}",
-                     "yes" if m["survival"]["all_species_alive"] else "no", _pct(m["fallbacks"]["rate"], 2)])
+                     m["survival"]["hours_survived"], f"{pop['rabbit']} / {pop['deer']} / {pop['wolf']}",
+                     "yes" if m["survival"]["all_species_alive"] else "no"])
     parts += ["## All runs", "",
-              _table(["Run", "Valid", "Hours", "Final rabbits / deer / wolves", "All species alive", "Fallback rate"],
-                     rows), ""]
+              _table(["Run", "Hours", "Final rabbits / deer / wolves", "All species alive"], rows), ""]
     if summary["missing"]:
         parts += [f"Not yet run: {', '.join(summary['missing'])}", ""]
     return "\n".join(parts)
