@@ -915,6 +915,9 @@ Record every choice not covered above, and every change to a value in this docum
 | 2026-10-20 | Manual `run` ids with hesitation on use `h{value}`, for example `run-rules-h0.4-seed7`. `run` writes to `runs/<run id>` and logs requests only with `--log-requests`. | Run ids need a place for the threshold, and the 6.3 table makes logging off by default for `run`. |
 | 2026-10-20 | `view` writes the replay into the page with every `<` escaped as `\u003c`. | Keeps `</script>` and `<!--` inside a replay from breaking the page. |
 | 2026-10-20 | `python -m valley` exits with the handler's status code. | `tune --check` and `bench` need a non-zero exit on failure. |
+| 2026-10-20 | Calibration counts only decisions whose source is `model`. Baseline brains get blunder counts but no calibration. Blunders per 1,000 decisions divide by decisions that were not fallbacks. | 8.4 says calibration is for model decisions, and 8.3 excludes fallbacks. |
+| 2026-10-20 | `first_extinction` is the clock text of the first hour any species reached 0. `mean_population` averages over hours 1 to N. A run is valid when fallbacks are at most 2% of all decisions across its brains. | 8.2 and ground rule 6, made precise. |
+| 2026-10-20 | Metrics gain a `hesitation` section: the threshold, the real decisions, how many froze, and the share. | The hesitation experiment needs to say how often animals froze. |
 
 ## Phase 5 tuning record
 

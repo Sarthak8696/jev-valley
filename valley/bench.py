@@ -1,12 +1,15 @@
 """Runs simulations. `run_one` is the single place that turns a run description into a
-simulation, runs it, and writes `replay.json` and, for model brains, `requests.jsonl`.
+simulation, runs it, and writes `replay.json`, `metrics.json` and, for model brains,
+`requests.jsonl`.
 """
 
+import json
 import os
 import sys
 from dataclasses import dataclass, field
 
 from valley.brains import MODEL_BRAINS, make_brain
+from valley.metrics import BlunderTally, compute_metrics
 from valley.replay import build_replay, write_replay
 from valley.simulation import Simulation
 from valley.species import SPECIES_ORDER
@@ -31,6 +34,7 @@ class RunSpec:
     timeout: float = 30
     log_requests: bool = False
     cache_dir: str | None = None
+    price_per_mtok: float | None = None  # price per million input tokens; money is only reported when given
     run_id: str | None = None
     options: dict = field(default_factory=dict)
 
@@ -88,7 +92,7 @@ def build_brains(spec: RunSpec, out_dir: str | None) -> tuple[dict, list]:
 
 
 def run_one(spec: RunSpec, out_dir: str | None, progress=None) -> dict:
-    """Run one simulation and write its files to `out_dir`. Returns the replay and file paths."""
+    """Run one simulation and write `replay.json`, `metrics.json` and, if asked, `requests.jsonl`."""
     log = None
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
@@ -96,21 +100,27 @@ def run_one(spec: RunSpec, out_dir: str | None, progress=None) -> dict:
         if spec.log_requests and os.path.exists(log):
             os.remove(log)  # a rerun must not append to an older log
     brains, instances = build_brains(spec, out_dir)
+    tally = BlunderTally()
     try:
         sim = Simulation(spec.seed, brains, days=spec.days, width=spec.width, height=spec.height,
-                         max_creatures=spec.max_creatures, hesitate_below=spec.hesitate_below)
+                         max_creatures=spec.max_creatures, hesitate_below=spec.hesitate_below, tally=tally)
         sim.run(on_frame=progress)
     finally:
         for brain in instances:
             brain.close()
     replay = build_replay(sim, spec.id)
+    metrics = compute_metrics(replay, spec.price_per_mtok)
+    replay["summary"]["valid"] = metrics["valid"]
     paths, replay_bytes = {}, None
     if out_dir:
         paths["replay"] = os.path.join(out_dir, "replay.json")
         replay_bytes = write_replay(paths["replay"], replay)
+        paths["metrics"] = os.path.join(out_dir, "metrics.json")
+        with open(paths["metrics"], "w", encoding="utf-8") as handle:
+            json.dump(metrics, handle, indent=2)
         if spec.log_requests and os.path.exists(log):
             paths["requests"] = log
-    return {"sim": sim, "replay": replay, "paths": paths, "replay_bytes": replay_bytes}
+    return {"sim": sim, "replay": replay, "metrics": metrics, "paths": paths, "replay_bytes": replay_bytes}
 
 
 def stderr_progress(spec: RunSpec):
