@@ -924,6 +924,12 @@ Record every choice not covered above, and every change to a value in this docum
 | 2026-10-20 | The charts are SVG cards on the light chart surface, in both color schemes. Each brain keeps its color in every chart: Jev blue, Laya orange, rules aqua, random gray. Each also has its own marker shape, and every chart has a legend and a table in `summary.md`. Mixed-brain and hesitation groups reuse the brain color with a different line style or extra palette slots. | Aqua and magenta fall below 3:1 contrast on the light surface in the palette validator, so identity cannot rely on color alone. |
 | 2026-10-20 | The population chart shows the median over valid runs, counting a run that ended early as 0. Charts are skipped with a message if matplotlib is not installed. | matplotlib is optional. |
 | 2026-10-20 | `tests/test_bench.py` and `tests/test_charts.py` are added. | Phase 9's done condition needs tests. |
+| 2026-10-20 | The viewer imports Three.js 0.160.0 from jsdelivr through an import map. With no WebGL it shows a notice and a 2D flat map. `?webgl=off` forces that fallback for testing. | 10.1 asks for a message and a flat map. |
+| 2026-10-20 | The camera fits the whole valley using the projected size of the map at the current angle, rotates in 90 degree steps over 400 ms, and zooms in to about 8 tiles across. Dragging pans only when zoomed in. One-finger swipes scroll the page while the whole valley is in view. | 10.2, plus phone scrolling. |
+| 2026-10-20 | A hunting wolf's dashed line points at the nearest prey within 6 tiles in the displayed frame. The replay does not record the actual target. | An approximation of the wolf's target. |
+| 2026-10-20 | The mind panel rebuilds a creature's recent memories from its notes plus its hesitation flags, shows its age from `age0`, and the population chart has a table view. | The replay format keeps memories as sparse notes. |
+| 2026-10-20 | Measured in a desktop browser with 45 animals in view: 120 frames per second (the display's limit), 102 draw calls, about 10,000 triangles. The 60 fps target on a mid-range phone has not been tested by the builder. | The author tests on their phone. |
+| 2026-10-20 | `examples/sample-replay.json` is a rules-brain month on seed 57 (about 2 MB), chosen because all three species are alive at the end. | A lively month for the viewer's sample button. |
 
 ## Phase 5 tuning record
 

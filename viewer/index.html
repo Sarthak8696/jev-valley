@@ -1,0 +1,1277 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jev Valley</title>
+<meta name="description" content="A small simulated valley where every animal decides its next action through a typed decision model.">
+<meta name="valley-live" content="">
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+</script>
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f9f9f7;
+    --surface: #fcfcfb;
+    --ink: #0b0b0b;
+    --ink-2: #52514e;
+    --muted: #6f6d67;
+    --line: #e1e0d9;
+    --track: #ecebe5;
+    --accent: #2a78d6;
+    --accent-ink: #ffffff;
+    --rabbit: #6250d6;
+    --deer: #eb6834;
+    --wolf: #2a78d6;
+    --warn-bg: #fff4d6;
+    --warn-ink: #5a4300;
+    --focus: #2a78d6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --bg: #0d0d0d;
+      --surface: #1a1a19;
+      --ink: #f0efec;
+      --ink-2: #c3c2b7;
+      --muted: #a09e96;
+      --line: #2c2c2a;
+      --track: #262624;
+      --accent: #3987e5;
+      --accent-ink: #0b0b0b;
+      --rabbit: #9085e9;
+      --deer: #d95926;
+      --wolf: #3987e5;
+      --warn-bg: #3a2f10;
+      --warn-ink: #f3dc9a;
+      --focus: #6da7ec;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #a09e96; --line: #2c2c2a;
+    --track: #262624; --accent: #3987e5; --accent-ink: #0b0b0b; --rabbit: #9085e9; --deer: #d95926; --wolf: #3987e5;
+    --warn-bg: #3a2f10; --warn-ink: #f3dc9a; --focus: #6da7ec;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); }
+  body { font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  button, input { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+  .app { max-width: 1280px; margin: 0 auto; padding: 12px 16px 24px; display: grid; gap: 12px; }
+  header.top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 20px; }
+  header.top h1 { margin: 0; font-size: 18px; font-weight: 650; letter-spacing: -0.01em; }
+  .runinfo { display: flex; flex-wrap: wrap; gap: 4px 16px; color: var(--ink-2); font-size: 13px; }
+  .runinfo b { color: var(--ink); font-weight: 600; }
+  .live-badge { display: none; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2); }
+  .live-badge.on { display: inline-flex; }
+  .live-badge .dot { width: 8px; height: 8px; border-radius: 50%; background: #d03b3b; }
+  .live-badge.thinking .dot { animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .25; } }
+  @media (prefers-reduced-motion: reduce) { .live-badge.thinking .dot { animation: none; } }
+
+  .layout { display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr) 340px; align-items: start; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+  .stage { position: relative; overflow: hidden; }
+  .stage .view { position: relative; width: 100%; height: min(62vh, 640px); min-height: 320px; background: #cfe4f5; touch-action: pan-y; }
+  .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .stage canvas:focus-visible { outline-offset: -3px; }
+  .overlay { position: absolute; display: flex; gap: 6px; }
+  .overlay.tl { top: 10px; left: 10px; }
+  .overlay.tr { top: 10px; right: 10px; }
+  .overlay.bl { bottom: 10px; left: 10px; }
+  .overlay.br { bottom: 10px; right: 10px; }
+  .tip { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); padding: 4px 10px; border-radius: 999px;
+         background: rgba(20,20,20,.62); color: #fff; font-size: 12px; pointer-events: none; white-space: nowrap; }
+  .btn { min-height: 34px; min-width: 34px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--line);
+         background: var(--surface); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+  .btn:hover { background: var(--track); }
+  .btn[aria-pressed="true"], .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .overlay .btn { background: rgba(252,252,251,.92); color: #0b0b0b; border-color: rgba(0,0,0,.15); }
+  .overlay .btn:hover { background: #fff; }
+  .overlay .btn[aria-pressed="true"] { background: #2a78d6; color: #fff; border-color: #2a78d6; }
+
+  .timeline { display: grid; grid-template-columns: auto auto 1fr auto; gap: 10px; align-items: center; padding: 10px 12px; border-top: 1px solid var(--line); }
+  .timeline .clock { font-weight: 600; min-width: 108px; text-align: right; font-variant-numeric: tabular-nums; }
+  .speeds { display: inline-flex; gap: 4px; }
+  input[type="range"] { width: 100%; accent-color: var(--accent); min-height: 24px; }
+
+  .notice { padding: 8px 12px; background: var(--warn-bg); color: var(--warn-ink); border-bottom: 1px solid var(--line); font-size: 13px; }
+  .notice[hidden] { display: none; }
+
+  .side { display: grid; gap: 12px; }
+  .panel { padding: 12px 14px; }
+  .panel h2 { margin: 0 0 8px; font-size: 13px; font-weight: 650; color: var(--ink-2); text-transform: none; }
+  .empty-hint { color: var(--muted); margin: 0; }
+  .who { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+  .who strong { font-size: 16px; }
+  .who span { color: var(--ink-2); }
+  .meters { display: grid; gap: 6px; margin: 10px 0; }
+  .meter { display: grid; grid-template-columns: 56px 1fr 74px; align-items: center; gap: 8px; font-size: 13px; }
+  .track { height: 8px; background: var(--track); border-radius: 4px; overflow: hidden; }
+  .fill { height: 100%; background: var(--ink-2); border-radius: 4px; }
+  .meter .word { color: var(--ink-2); text-align: right; }
+  .chose { margin: 8px 0 4px; }
+  .chose b { font-size: 15px; }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 999px; background: var(--warn-bg); color: var(--warn-ink); font-size: 12px; margin-left: 6px; }
+  .why { margin: 6px 0 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+  .why li { display: grid; grid-template-columns: 112px 1fr 38px; gap: 8px; align-items: center; font-size: 13px; color: var(--ink-2); }
+  .why li.chosen { color: var(--ink); font-weight: 600; }
+  .why .track { height: 10px; }
+  .why .fill { background: var(--muted); }
+  .why li.chosen .fill { background: var(--accent); }
+  .why .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .sub { margin: 12px 0 4px; font-size: 12px; font-weight: 650; color: var(--ink-2); }
+  .memories { margin: 0; padding-left: 18px; color: var(--ink-2); font-size: 13px; }
+  .fate { margin-top: 10px; padding: 6px 10px; border-radius: 8px; background: var(--track); font-size: 13px; }
+  .mind-actions { display: flex; gap: 6px; margin-top: 12px; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--ink-2); margin-top: 6px; }
+  .legend i { display: inline-block; width: 18px; height: 0; border-top: 2px solid; vertical-align: middle; margin-right: 6px; }
+  .legend .rabbit i { border-color: var(--rabbit); } .legend .deer i { border-color: var(--deer); } .legend .wolf i { border-color: var(--wolf); }
+  #popchart { width: 100%; height: 150px; display: block; }
+  details.table-view { margin-top: 8px; font-size: 12px; color: var(--ink-2); }
+  details.table-view summary { cursor: pointer; }
+  details.table-view table { border-collapse: collapse; width: 100%; margin-top: 6px; max-height: 160px; display: block; overflow: auto; }
+  details.table-view th, details.table-view td { padding: 2px 8px; text-align: right; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+  details.table-view th:first-child, details.table-view td:first-child { text-align: left; }
+  .events { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; max-height: 190px; overflow: auto; font-size: 13px; }
+  .events li { color: var(--ink-2); }
+  .events time { color: var(--muted); font-size: 12px; margin-right: 6px; }
+
+  .dropzone { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; background: var(--surface); }
+  .dropzone[hidden] { display: none; }
+  .dropzone.over { outline: 3px dashed var(--accent); outline-offset: -12px; }
+  .dropzone h2 { margin: 0 0 6px; font-size: 18px; }
+  .dropzone p { margin: 0 0 14px; color: var(--ink-2); max-width: 420px; }
+  .dropzone .row { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+  .dropzone .error { color: #d03b3b; margin-top: 12px; }
+
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: minmax(0, 1fr); }
+    .stage .view { height: 56vh; }
+    .timeline { grid-template-columns: auto 1fr auto; }
+    .timeline .speeds { grid-column: 1 / -1; order: 5; }
+  }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <h1>Jev Valley</h1>
+    <div class="runinfo" id="runinfo" aria-live="polite"></div>
+    <div class="live-badge" id="live-badge"><span class="dot"></span><span id="live-text">Live</span></div>
+  </header>
+
+  <div class="layout">
+    <section class="card stage" aria-label="Valley">
+      <div class="notice" id="notice" hidden></div>
+      <div class="view" id="view">
+        <canvas id="gl" tabindex="0" role="img" aria-label="3D view of the valley. Click an animal to see why it chose its action. Space plays and pauses, arrow keys step one hour, Q and E rotate."></canvas>
+        <canvas id="flat" hidden tabindex="0" role="img" aria-label="Flat map of the valley. Click an animal to see why it chose its action."></canvas>
+        <div class="overlay tl">
+          <button class="btn" id="rot-left" aria-label="Rotate left (Q)" title="Rotate left (Q)">&#8634;</button>
+          <button class="btn" id="rot-right" aria-label="Rotate right (E)" title="Rotate right (E)">&#8635;</button>
+        </div>
+        <div class="overlay tr">
+          <button class="btn" id="zoom-out" aria-label="Zoom out" title="Zoom out">&minus;</button>
+          <button class="btn" id="zoom-in" aria-label="Zoom in" title="Zoom in">+</button>
+          <button class="btn" id="flat-toggle" aria-pressed="false">Flat map</button>
+        </div>
+        <div class="tip" id="tip">Click an animal to see why it chose what it did</div>
+        <div class="dropzone" id="dropzone">
+          <div>
+            <h2>Drop a replay file here</h2>
+            <p>Open a <code>replay.json</code> written by <code>python -m valley run</code>, or load the sample month.</p>
+            <div class="row">
+              <button class="btn primary" id="choose">Choose a file</button>
+              <button class="btn" id="load-sample">Load the sample month</button>
+            </div>
+            <input type="file" id="file" accept=".json,application/json" hidden>
+            <div class="error" id="drop-error" role="alert"></div>
+          </div>
+        </div>
+      </div>
+      <div class="timeline" id="timeline">
+        <button class="btn primary" id="play" aria-label="Play" disabled>Play</button>
+        <div class="speeds" role="group" aria-label="Playback speed">
+          <button class="btn" data-speed="1" aria-pressed="true">1&times;</button>
+          <button class="btn" data-speed="4" aria-pressed="false">4&times;</button>
+          <button class="btn" data-speed="16" aria-pressed="false">16&times;</button>
+        </div>
+        <input type="range" id="scrub" min="0" max="720" step="1" value="0" aria-label="Hour of the month" disabled>
+        <div class="clock" id="clock">Day 1, 6 am</div>
+      </div>
+    </section>
+
+    <aside class="side">
+      <section class="card panel" id="mind" aria-label="Mind panel">
+        <h2>Mind</h2>
+        <div id="mind-body"><p class="empty-hint">Click an animal in the valley to see its needs, what it chose, and why.</p></div>
+      </section>
+      <section class="card panel" aria-label="Population">
+        <h2>Population</h2>
+        <canvas id="popchart" role="img" aria-label="Population of rabbits, deer and wolves over the month"></canvas>
+        <div class="legend"><span class="rabbit"><i></i>Rabbits</span><span class="deer"><i></i>Deer</span><span class="wolf"><i></i>Wolves</span></div>
+        <details class="table-view"><summary>Table view</summary><div id="pop-table"></div></details>
+      </section>
+      <section class="card panel" aria-label="Events">
+        <h2>Events</h2>
+        <ul class="events" id="events"><li class="empty-hint">Nothing has happened yet.</li></ul>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<script id="replay-data" type="application/json"></script>
+<script type="module">
+import * as THREE from "three";
+
+/* ------------------------------------------------------------------ helpers */
+const $ = (selector) => document.querySelector(selector);
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const smooth = (t) => { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); };
+const easeInOut = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
+const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+function hash01(text) {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return ((h >>> 0) % 100000) / 100000;
+}
+
+const SPECIES = ["rabbit", "deer", "wolf"];
+const ACTION_NAMES = {
+  eat: "Eat", drink: "Drink", flee: "Flee", hide: "Hide", rest: "Rest", seek_mate: "Seek a mate",
+  follow_group: "Stay with the group", explore: "Explore", hunt: "Hunt", scavenge: "Scavenge",
+};
+const CAUSE_TEXT = { eaten: "Eaten", starved: "Starved", thirst: "Died of thirst" };
+const ROW = { id: 0, x: 1, y: 2, action: 3, conf: 4, hesitated: 5, energy: 6, hydration: 7, probs: 8, path: 9 };
+const FORMAT = "jev-valley/replay@2";
+
+/* The clock mirrors valley/clock.py. */
+function clockParts(step, startHour) {
+  const total = startHour + step;
+  return { day: Math.floor(total / 24) + 1, hour: total % 24 };
+}
+function clockText(step, startHour = 6) {
+  const { day, hour } = clockParts(step, startHour);
+  return `Day ${day}, ${hour % 12 || 12} ${hour < 12 ? "am" : "pm"}`;
+}
+const hungerWord = (pct) => (pct < 20 ? "starving" : pct < 45 ? "hungry" : pct < 80 ? "fed" : "full");
+const thirstWord = (pct) => (pct < 20 ? "parched" : pct < 45 ? "thirsty" : pct < 80 ? "fine" : "quenched");
+
+/* ------------------------------------------------------------------ replay store */
+class Store {
+  constructor(data) {
+    this.meta = data.meta;
+    this.creatures = data.creatures || {};
+    this.frames = data.frames || [];
+    this.summary = data.summary || {};
+    this.rowMaps = [];
+    this.hesitations = {};
+    this.indexed = 0;
+    this._food = null;
+    this._foodStep = -1;
+    this.index();
+  }
+  get startHour() { return this.meta.start_hour ?? 6; }
+  get lastStep() { return this.frames.length - 1; }
+  get totalSteps() { return this.meta.steps; }
+
+  index() {
+    for (let k = this.indexed; k < this.frames.length; k++) {
+      const map = new Map();
+      for (const row of this.frames[k].agents || []) {
+        map.set(row[ROW.id], row);
+        if (row[ROW.hesitated]) (this.hesitations[row[ROW.id]] ||= []).push(k);
+      }
+      this.rowMaps[k] = map;
+    }
+    this.indexed = this.frames.length;
+  }
+
+  addFrame(frame, extras = {}) {
+    this.frames.push(frame);
+    Object.assign(this.creatures, extras.newCreatures || {});
+    for (const [id, notes] of Object.entries(extras.notes || {})) {
+      (this.creatures[id].notes ||= []).push(...notes);
+    }
+    for (const [id, fate] of Object.entries(extras.fates || {})) {
+      if (this.creatures[id]) Object.assign(this.creatures[id], fate);
+    }
+    this.index();
+  }
+
+  rows(k) { return this.rowMaps[clamp(k, 0, this.lastStep)]; }
+
+  food(k) {
+    k = clamp(k, 0, this.lastStep);
+    if (this._food && k === this._foodStep) return this._food;
+    let from;
+    if (this._food && k > this._foodStep) {
+      from = this._foodStep + 1;
+    } else {
+      let j = k;
+      while (j > 0 && !this.frames[j].food) j--;
+      this._food = Uint8Array.from(this.frames[j].food, (c) => +c);
+      from = j + 1;
+    }
+    for (let i = from; i <= k; i++) {
+      const frame = this.frames[i];
+      if (frame.food) this._food = Uint8Array.from(frame.food, (c) => +c);
+      else for (const [index, value] of frame.food_diff) this._food[index] = value;
+    }
+    this._foodStep = k;
+    return this._food;
+  }
+
+  memories(id, step) {
+    const info = this.creatures[id] || {};
+    const items = (info.notes || []).filter(([s]) => s <= step);
+    for (const s of this.hesitations[id] || []) if (s <= step) items.push([s, "hesitated"]);
+    items.sort((a, b) => a[0] - b[0]);
+    return items.slice(-3).map(([s, text]) => `${clockText(s, this.startHour)}: ${text}`);
+  }
+}
+
+/* ------------------------------------------------------------------ scene state (shared by both renderers) */
+function pathPosition(path, progress) {
+  const segments = path.length - 1;
+  if (segments <= 0) return { x: path[0][0], y: path[0][1], dx: 0, dy: 0, local: 0 };
+  const u = clamp(progress, 0, 1) * segments;
+  const i = Math.min(Math.floor(u), segments - 1);
+  const local = u - i;
+  const a = path[i], b = path[i + 1];
+  return { x: lerp(a[0], b[0], local), y: lerp(a[1], b[1], local), dx: b[0] - a[0], dy: b[1] - a[1], local };
+}
+
+function computeScene(store, T) {
+  const last = store.lastStep;
+  T = clamp(T, 0, last);
+  let k = Math.floor(T), f = T - k;
+  if (k >= last) { k = last; f = 0; }
+  const animals = [];
+  const startHour = store.startHour;
+  if (f === 0) {
+    for (const row of store.rows(k).values()) {
+      const info = store.creatures[row[ROW.id]];
+      if (!info || (info.died !== null && info.died !== undefined && info.died <= k)) continue;
+      animals.push(animalState(store, row, k, { x: row[ROW.x], y: row[ROW.y], dx: 0, dy: 0, local: 0 }, 1, 0, 0));
+    }
+  } else {
+    const prev = store.rows(k), cur = store.rows(k + 1);
+    for (const row of cur.values()) {
+      const id = row[ROW.id];
+      const info = store.creatures[id];
+      const before = prev.get(id);
+      const start = before ? [before[ROW.x], before[ROW.y]] : [row[ROW.x], row[ROW.y]];
+      const path = [start, ...row[ROW.path]];
+      const action = row[ROW.action];
+      const delay = 0.15 * hash01(id + ":" + (k + 1));
+      const duration = action === "flee" || action === "hunt" ? 0.3 : 0.55;
+      const progress = easeInOut((f - delay) / duration);
+      const pos = pathPosition(path, progress);
+      const newborn = info.born === k + 1 && !before;
+      const dying = info.died === k + 1;
+      animals.push(animalState(store, row, k + 1, pos, newborn ? smooth(f / 0.5) : 1, dying ? smooth((f - 0.2) / 0.5) : 0,
+        dying && f > 0.78 ? 1 : 0));
+    }
+  }
+  return { k, f, animals, carcasses: carcassesAt(store, k, f), hours: (startHour + T) % 24, step: Math.round(T) };
+}
+
+function animalState(store, row, rowStep, pos, grow, fall, gone) {
+  const id = row[ROW.id];
+  const info = store.creatures[id];
+  return {
+    id, species: info.species, name: info.name, row, rowStep,
+    x: pos.x, y: pos.y, dx: pos.dx, dy: pos.dy, moving: pos.dx !== 0 || pos.dy !== 0,
+    hop: !reduceMotion && (pos.dx !== 0 || pos.dy !== 0) ? Math.sin(Math.PI * pos.local) * 0.16 : 0,
+    action: row[ROW.action], hesitated: row[ROW.hesitated] === 1, grow, fall, gone,
+  };
+}
+
+function carcassesAt(store, k, f) {
+  const list = store.frames[Math.min(k + (f > 0 ? 1 : 0), store.lastStep)].carcasses || [];
+  const before = f > 0 ? store.frames[k].carcasses || [] : [];
+  return list.map(([x, y, meat, species]) => {
+    const old = before.find((c) => c[0] === x && c[1] === y && c[3] === species);
+    const from = old ? old[2] : 0;
+    return { x, y, species, meat: f > 0 ? lerp(from, meat, smooth(f)) : meat };
+  });
+}
+
+/* ------------------------------------------------------------------ lighting (visual only) */
+const LIGHT_KEYS = [
+  { h: 0, sun: 0x8197d8, si: 0.6, sky: 0x4d63a6, ground: 0x333d5c, hi: 1.0, bg: 0x18203a },
+  { h: 5, sun: 0x8197d8, si: 0.6, sky: 0x4d63a6, ground: 0x333d5c, hi: 1.0, bg: 0x18203a },
+  { h: 6.5, sun: 0xffb070, si: 0.8, sky: 0x8a7fa8, ground: 0x4a4a45, hi: 0.7, bg: 0x6d5c80 },
+  { h: 8, sun: 0xfff1d6, si: 1.0, sky: 0xbfd9ff, ground: 0x6b7a55, hi: 0.85, bg: 0xcfe4f5 },
+  { h: 17, sun: 0xfff1d6, si: 1.0, sky: 0xbfd9ff, ground: 0x6b7a55, hi: 0.85, bg: 0xcfe4f5 },
+  { h: 18.5, sun: 0xff9a5c, si: 0.8, sky: 0x9a7fa0, ground: 0x4a4a45, hi: 0.7, bg: 0x86607a },
+  { h: 20, sun: 0x8197d8, si: 0.6, sky: 0x4d63a6, ground: 0x333d5c, hi: 1.0, bg: 0x18203a },
+  { h: 24, sun: 0x8197d8, si: 0.6, sky: 0x4d63a6, ground: 0x333d5c, hi: 1.0, bg: 0x18203a },
+];
+const _c1 = new THREE.Color(), _c2 = new THREE.Color();
+function mixColor(out, a, b, t) { _c1.setHex(a); _c2.setHex(b); out.copy(_c1).lerp(_c2, t); return out; }
+
+function lightingAt(hours) {
+  let i = 0;
+  while (i < LIGHT_KEYS.length - 2 && hours >= LIGHT_KEYS[i + 1].h) i++;
+  const a = LIGHT_KEYS[i], b = LIGHT_KEYS[i + 1];
+  const t = clamp((hours - a.h) / (b.h - a.h), 0, 1);
+  const angle = ((hours - 6) / 12) * Math.PI;
+  const dayWeight = hours >= 6 && hours <= 18 ? clamp((Math.sin(angle) + 0.1) / 0.35, 0, 1) : 0;
+  const day = [Math.cos(angle) * 18, Math.max(0.25, Math.sin(angle)) * 18, 8];
+  const moon = [-10, 15, -8];
+  return {
+    sunColor: mixColor(new THREE.Color(), a.sun, b.sun, t),
+    sunIntensity: lerp(a.si, b.si, t),
+    skyColor: mixColor(new THREE.Color(), a.sky, b.sky, t),
+    groundColor: mixColor(new THREE.Color(), a.ground, b.ground, t),
+    hemiIntensity: lerp(a.hi, b.hi, t),
+    background: mixColor(new THREE.Color(), a.bg, b.bg, t),
+    sunPosition: day.map((v, n) => lerp(moon[n], v, dayWeight)),
+  };
+}
+
+/* ------------------------------------------------------------------ animal geometry: a few boxes merged into one mesh */
+function boxesGeometry(parts) {
+  const positions = [], normals = [], colors = [], indices = [];
+  let base = 0;
+  for (const part of parts) {
+    const [w, h, l] = part.size, [px, py, pz] = part.pos;
+    const color = new THREE.Color(part.color);
+    const hw = w / 2, hh = h / 2, hl = l / 2;
+    const faces = [
+      [[1, 0, 0], [[hw, -hh, hl], [hw, -hh, -hl], [hw, hh, -hl], [hw, hh, hl]]],
+      [[-1, 0, 0], [[-hw, -hh, -hl], [-hw, -hh, hl], [-hw, hh, hl], [-hw, hh, -hl]]],
+      [[0, 1, 0], [[-hw, hh, hl], [hw, hh, hl], [hw, hh, -hl], [-hw, hh, -hl]]],
+      [[0, -1, 0], [[-hw, -hh, -hl], [hw, -hh, -hl], [hw, -hh, hl], [-hw, -hh, hl]]],
+      [[0, 0, 1], [[-hw, -hh, hl], [hw, -hh, hl], [hw, hh, hl], [-hw, hh, hl]]],
+      [[0, 0, -1], [[hw, -hh, -hl], [-hw, -hh, -hl], [-hw, hh, -hl], [hw, hh, -hl]]],
+    ];
+    for (const [normal, corners] of faces) {
+      for (const [x, y, z] of corners) {
+        positions.push(px + x, py + y, pz + z);
+        normals.push(...normal);
+        colors.push(color.r, color.g, color.b);
+      }
+      indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+      base += 4;
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
+  geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+  geometry.setIndex(indices);
+  return geometry;
+}
+
+/* Each species is a body (torso, legs, tail) and a head on a pivot so it can bob. Origin is at the animal's feet. */
+const BODIES = {
+  rabbit: {
+    body: [
+      { size: [0.34, 0.24, 0.5], pos: [0, 0.2, 0], color: "#d8b98a" },
+      { size: [0.38, 0.28, 0.24], pos: [0, 0.23, -0.16], color: "#cfae7e" },
+      { size: [0.1, 0.1, 0.1], pos: [0, 0.3, -0.34], color: "#fbfaf5" },
+    ],
+    head: [
+      { size: [0.24, 0.22, 0.24], pos: [0, 0, 0.1], color: "#e0c497" },
+      { size: [0.07, 0.28, 0.06], pos: [-0.07, 0.24, 0.04], color: "#d8b98a" },
+      { size: [0.07, 0.28, 0.06], pos: [0.07, 0.24, 0.04], color: "#d8b98a" },
+    ],
+    pivot: [0, 0.36, 0.2], height: 0.95,
+  },
+  deer: {
+    body: [
+      { size: [0.34, 0.34, 0.72], pos: [0, 0.68, 0], color: "#8a5a3b" },
+      { size: [0.07, 0.5, 0.07], pos: [-0.1, 0.25, 0.26], color: "#6d452c" },
+      { size: [0.07, 0.5, 0.07], pos: [0.1, 0.25, 0.26], color: "#6d452c" },
+      { size: [0.07, 0.5, 0.07], pos: [-0.1, 0.25, -0.26], color: "#6d452c" },
+      { size: [0.07, 0.5, 0.07], pos: [0.1, 0.25, -0.26], color: "#6d452c" },
+      { size: [0.1, 0.12, 0.06], pos: [0, 0.78, -0.38], color: "#f3ead8" },
+    ],
+    head: [
+      { size: [0.13, 0.36, 0.13], pos: [0, 0.12, 0.02], color: "#8a5a3b" },
+      { size: [0.17, 0.16, 0.3], pos: [0, 0.34, 0.1], color: "#9a6a47" },
+      { size: [0.03, 0.28, 0.03], pos: [-0.06, 0.52, 0.02], color: "#d9c7a0" },
+      { size: [0.03, 0.28, 0.03], pos: [0.06, 0.52, 0.02], color: "#d9c7a0" },
+    ],
+    pivot: [0, 0.82, 0.34], height: 1.5,
+  },
+  wolf: {
+    body: [
+      { size: [0.32, 0.28, 0.95], pos: [0, 0.42, 0], color: "#6c7a89" },
+      { size: [0.08, 0.28, 0.08], pos: [-0.1, 0.14, 0.32], color: "#56626f" },
+      { size: [0.08, 0.28, 0.08], pos: [0.1, 0.14, 0.32], color: "#56626f" },
+      { size: [0.08, 0.28, 0.08], pos: [-0.1, 0.14, -0.32], color: "#56626f" },
+      { size: [0.08, 0.28, 0.08], pos: [0.1, 0.14, -0.32], color: "#56626f" },
+      { size: [0.09, 0.09, 0.36], pos: [0, 0.46, -0.62], color: "#7d8b99" },
+    ],
+    head: [
+      { size: [0.25, 0.23, 0.26], pos: [0, 0, 0.1], color: "#7d8b99" },
+      { size: [0.13, 0.1, 0.18], pos: [0, -0.04, 0.3], color: "#aab4be" },
+      { size: [0.06, 0.12, 0.06], pos: [-0.08, 0.17, 0.04], color: "#56626f" },
+      { size: [0.06, 0.12, 0.06], pos: [0.08, 0.17, 0.04], color: "#56626f" },
+    ],
+    pivot: [0, 0.52, 0.5], height: 1.0,
+  },
+};
+
+/* ------------------------------------------------------------------ 3D renderer */
+const TILE_HEIGHT = { ".": 0.5, T: 0.5, "~": 0.25, "^": 0.95 };
+const GROUND_Y = 0.5;
+
+class GL {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    this.scene = new THREE.Scene();
+    this.camera = new THREE.OrthographicCamera(-10, 10, 10, -10, 0.1, 400);
+    this.hemi = new THREE.HemisphereLight(0xbfd9ff, 0x6b7a55, 0.85);
+    this.sun = new THREE.DirectionalLight(0xfff1d6, 1);
+    this.scene.add(this.hemi, this.sun, this.sun.target);
+    this.animals = new Map();
+    this.carcassMeshes = [];
+    this.ray = new THREE.Raycaster();
+    this.ring = new THREE.Mesh(new THREE.RingGeometry(0.52, 0.66, 40),
+      new THREE.MeshBasicMaterial({ color: 0x2a78d6, transparent: true, opacity: 0.95, depthWrite: false }));
+    this.ring.rotation.x = -Math.PI / 2;
+    this.ring.visible = false;
+    this.scene.add(this.ring);
+    // A dashed line from each hunting wolf to its target, drawn as small bars so it stays readable at any zoom.
+    this.dashes = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1),
+      new THREE.MeshBasicMaterial({ color: 0xe0443e, depthTest: false }), 800);
+    this.dashes.count = 0; this.dashes.frustumCulled = false; this.dashes.renderOrder = 10;
+    this.scene.add(this.dashes);
+    this.dummy = new THREE.Object3D();
+    this.materials = {};
+    for (const key of SPECIES) {
+      this.materials[key] = {
+        solid: new THREE.MeshLambertMaterial({ vertexColors: true }),
+        ghost: new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, opacity: 0.45, depthWrite: false }),
+      };
+    }
+    this.pauseMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    this.carcassMaterial = new THREE.MeshLambertMaterial({ color: 0x4a2f2a });
+    this.carcassGeometry = new THREE.ConeGeometry(0.5, 0.5, 6);
+    this.geometries = {};
+    for (const key of SPECIES) {
+      this.geometries[key] = { body: boxesGeometry(BODIES[key].body), head: boxesGeometry(BODIES[key].head) };
+    }
+    this.hitGeometry = new THREE.BoxGeometry(0.9, 1, 0.9);
+    this.hitMaterial = new THREE.MeshBasicMaterial({ visible: false });
+    this.view = { x: 0, z: 0, azimuth: Math.PI / 4, elevation: 55 * Math.PI / 180, zoom: 1 };
+    this.width = 28; this.height = 18;
+    this.size();
+  }
+
+  size() {
+    const rect = this.canvas.parentElement.getBoundingClientRect();
+    this.renderer.setSize(rect.width, rect.height, false);
+    this.aspect = rect.width / Math.max(1, rect.height);
+  }
+
+  /* Width in tiles that just fits the whole valley at the given camera angle, in a view of this shape. */
+  fitWidth(view) {
+    const az = view.azimuth, el = view.elevation;
+    const right = [Math.cos(az), 0, -Math.sin(az)];
+    const fwd = [-Math.cos(el) * Math.sin(az), -Math.sin(el), -Math.cos(el) * Math.cos(az)];
+    const up = [right[1] * fwd[2] - right[2] * fwd[1], right[2] * fwd[0] - right[0] * fwd[2], right[0] * fwd[1] - right[1] * fwd[0]];
+    let maxX = 0, maxY = 0;
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) for (const y of [0, 1.1]) {
+      const px = sx * (this.width / 2 + 0.7), pz = sz * (this.height / 2 + 0.7);
+      maxX = Math.max(maxX, Math.abs(px * right[0] + y * right[1] + pz * right[2]));
+      maxY = Math.max(maxY, Math.abs(px * up[0] + y * up[1] + pz * up[2]));
+    }
+    return 2 * Math.max(maxX, maxY * this.aspect) * 1.03;
+  }
+
+  build(store) {
+    for (const mesh of [...this.scene.children]) if (mesh.userData.terrain) this.scene.remove(mesh);
+    const { width, height, tiles } = store.meta;
+    this.width = width; this.height = height;
+    this.tiles = tiles.join("");
+    const counts = { ".": 0, T: 0, "~": 0, "^": 0 };
+    for (const c of this.tiles) counts[c]++;
+    const box = new THREE.BoxGeometry(1, 1, 1);
+    const make = (count, material) => {
+      const mesh = new THREE.InstancedMesh(box, material, Math.max(1, count));
+      mesh.count = count; mesh.userData.terrain = true; this.scene.add(mesh); return mesh;
+    };
+    this.grass = make(counts["."], new THREE.MeshLambertMaterial({ color: 0xffffff }));
+    this.forest = make(counts.T, new THREE.MeshLambertMaterial({ color: 0xffffff }));
+    this.water = make(counts["~"], new THREE.MeshLambertMaterial({ color: 0x4d97d8, transparent: true, opacity: 0.88 }));
+    this.rock = make(counts["^"], new THREE.MeshLambertMaterial({ color: 0x8b8d92 }));
+    const trunk = new THREE.InstancedMesh(new THREE.BoxGeometry(0.13, 0.3, 0.13), new THREE.MeshLambertMaterial({ color: 0x6b4a2f }), Math.max(1, counts.T));
+    const crown = new THREE.InstancedMesh(new THREE.ConeGeometry(0.32, 0.8, 5), new THREE.MeshLambertMaterial({ color: 0x2f6b3a }), Math.max(1, counts.T));
+    trunk.count = crown.count = counts.T;
+    trunk.userData.terrain = crown.userData.terrain = true;
+    this.scene.add(trunk, crown);
+    const dummy = new THREE.Object3D();
+    let gi = 0, fi = 0, wi = 0, ri = 0;
+    this.grassIndex = new Map(); this.forestIndex = new Map();
+    for (let i = 0; i < this.tiles.length; i++) {
+      const x = i % width, z = Math.floor(i / width);
+      const px = x - width / 2 + 0.5, pz = z - height / 2 + 0.5;
+      const c = this.tiles[i];
+      const hgt = TILE_HEIGHT[c];
+      dummy.rotation.set(0, 0, 0);
+      dummy.scale.set(1, hgt, 1);
+      dummy.position.set(px, hgt / 2, pz);
+      dummy.updateMatrix();
+      if (c === ".") { this.grass.setMatrixAt(gi, dummy.matrix); this.grassIndex.set(i, gi++); }
+      else if (c === "T") {
+        this.forest.setMatrixAt(fi, dummy.matrix); this.forestIndex.set(i, fi);
+        const r1 = hash01("t" + i), r2 = hash01("u" + i), r3 = hash01("v" + i);
+        const ox = (r1 - 0.5) * 0.5 + (r1 < 0.5 ? -0.12 : 0.12), oz = (r2 - 0.5) * 0.5 + (r2 < 0.5 ? -0.12 : 0.12);
+        const s = 0.85 + r3 * 0.35;
+        dummy.scale.set(s, s, s);
+        dummy.position.set(px + ox, hgt + 0.15 * s, pz + oz); dummy.updateMatrix(); trunk.setMatrixAt(fi, dummy.matrix);
+        dummy.position.set(px + ox, hgt + 0.3 * s + 0.4 * s, pz + oz); dummy.rotation.y = r3 * 3; dummy.updateMatrix(); crown.setMatrixAt(fi, dummy.matrix);
+        fi++;
+      } else if (c === "~") { this.water.setMatrixAt(wi++, dummy.matrix); }
+      else { dummy.scale.set(1, hgt + (hash01("r" + i) - 0.5) * 0.1, 1); dummy.position.y = dummy.scale.y / 2; dummy.updateMatrix(); this.rock.setMatrixAt(ri++, dummy.matrix); }
+    }
+    for (const mesh of [this.grass, this.forest, this.water, this.rock, trunk, crown]) mesh.instanceMatrix.needsUpdate = true;
+    const slab = new THREE.Mesh(new THREE.PlaneGeometry(width + 3, height + 3), new THREE.MeshLambertMaterial({ color: 0x3a3a34 }));
+    slab.rotation.x = -Math.PI / 2; slab.position.y = -0.02; slab.userData.terrain = true;
+    this.scene.add(slab);
+    this.lastFoodStep = -1;
+    for (const a of this.animals.values()) this.scene.remove(a.group);
+    this.animals.clear();
+  }
+
+  paintPlants(store, step) {
+    if (step === this.lastFoodStep) return;
+    this.lastFoodStep = step;
+    const food = store.food(step);
+    const dry = new THREE.Color(0x9aab5c), lush = new THREE.Color(0x63b250), fdry = new THREE.Color(0x3f7a3b), flush = new THREE.Color(0x2f7237);
+    const color = new THREE.Color();
+    for (const [tile, index] of this.grassIndex) { color.copy(dry).lerp(lush, clamp(food[tile] / 2, 0, 1)); this.grass.setColorAt(index, color); }
+    for (const [tile, index] of this.forestIndex) { color.copy(fdry).lerp(flush, clamp(food[tile] / 3, 0, 1)); this.forest.setColorAt(index, color); }
+    if (this.grass.instanceColor) this.grass.instanceColor.needsUpdate = true;
+    if (this.forest.instanceColor) this.forest.instanceColor.needsUpdate = true;
+  }
+
+  animalFor(state) {
+    let a = this.animals.get(state.id);
+    if (a) return a;
+    const def = BODIES[state.species];
+    const group = new THREE.Group();
+    const body = new THREE.Mesh(this.geometries[state.species].body, this.materials[state.species].solid);
+    const head = new THREE.Mesh(this.geometries[state.species].head, this.materials[state.species].solid);
+    head.position.set(...def.pivot);
+    const hit = new THREE.Mesh(this.hitGeometry, this.hitMaterial);
+    hit.position.y = 0.5; hit.userData.id = state.id;
+    const pause = new THREE.Group();
+    for (const dx of [-0.07, 0.07]) {
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.22, 0.06), this.pauseMaterial);
+      bar.position.set(dx, def.height + 0.28, 0); pause.add(bar);
+    }
+    pause.visible = false;
+    group.add(body, head, hit, pause);
+    this.scene.add(group);
+    a = { group, body, head, hit, pause, yaw: 0, species: state.species, ghost: false };
+    this.animals.set(state.id, a);
+    return a;
+  }
+
+  setCamera(view, flat) {
+    const cam = this.camera;
+    const halfW = this.fitWidth(view) / view.zoom / 2;
+    cam.left = -halfW; cam.right = halfW; cam.top = halfW / this.aspect; cam.bottom = -halfW / this.aspect;
+    cam.updateProjectionMatrix();
+    const dist = 90;
+    const cosEl = Math.cos(view.elevation);
+    cam.position.set(view.x + dist * cosEl * Math.sin(view.azimuth), dist * Math.sin(view.elevation),
+      view.z + dist * cosEl * Math.cos(view.azimuth));
+    cam.up.set(0, 1, 0);
+    cam.lookAt(view.x, 0, view.z);
+  }
+
+  update(scene, time, lighting, selectedId) {
+    this.paintPlants(time.store, scene.k + (scene.f > 0 ? 1 : 0));
+    this.hemi.color.copy(lighting.skyColor); this.hemi.groundColor.copy(lighting.groundColor); this.hemi.intensity = lighting.hemiIntensity;
+    this.sun.color.copy(lighting.sunColor); this.sun.intensity = lighting.sunIntensity;
+    this.sun.position.set(...lighting.sunPosition);
+    this.renderer.setClearColor(lighting.background);
+    this.canvas.parentElement.style.background = "#" + lighting.background.getHexString();
+
+    const seen = new Set();
+    const positions = new Map();
+    this.pickables = [];
+    for (const s of scene.animals) {
+      const a = this.animalFor(s);
+      seen.add(s.id);
+      const px = s.x - this.width / 2 + 0.5, pz = s.y - this.height / 2 + 0.5;
+      if (s.dx !== 0 || s.dy !== 0) a.yaw = Math.atan2(s.dx, s.dy);
+      const resting = s.action === "rest";
+      const hidden = s.action === "hide" && !s.gone;
+      if (hidden !== a.ghost) {
+        a.ghost = hidden;
+        const m = hidden ? this.materials[s.species].ghost : this.materials[s.species].solid;
+        a.body.material = m; a.head.material = m;
+      }
+      a.group.visible = !s.gone && s.grow > 0.01;
+      const breathe = reduceMotion || s.moving ? 0 : Math.sin(time.now * 0.0031 + hash01(s.id) * 6.28) * 0.025;
+      const scale = Math.max(0.001, s.grow);
+      a.group.scale.set(scale, scale * (1 + breathe) * (resting ? 0.72 : 1), scale);
+      a.group.position.set(px, GROUND_Y + s.hop - (hidden ? 0.05 : 0) - (resting ? 0.02 : 0) - s.fall * 0.12, pz);
+      a.group.rotation.set(0, a.yaw, 0);
+      a.group.rotation.z = s.fall * (Math.PI / 2) * (hash01(s.id) < 0.5 ? 1 : -1);
+      a.head.rotation.x = 0;
+      if (s.action === "eat" && !reduceMotion) a.head.rotation.x = 0.55 + Math.sin(time.now * 0.008 + hash01(s.id) * 6) * 0.25;
+      if (s.action === "drink") { a.head.rotation.x = 0.75; a.group.rotation.x = 0.12; }
+      a.pause.visible = s.hesitated && a.group.visible;
+      if (a.group.visible && s.fall === 0) this.pickables.push(a.hit);
+      positions.set(s.id, [px, pz, s]);
+    }
+    for (const [id, a] of this.animals) if (!seen.has(id)) a.group.visible = false;
+
+    const chosen = positions.get(selectedId);
+    if (chosen && this.animals.get(selectedId).group.visible) {
+      this.ring.visible = true; this.ring.position.set(chosen[0], GROUND_Y + 0.04, chosen[1]);
+    } else this.ring.visible = false;
+
+    let dashCount = 0;
+    for (const [id, [px, pz, s]] of positions) {
+      if (s.species !== "wolf" || s.action !== "hunt" || s.gone) continue;
+      let best = null, bestDist = Infinity;
+      for (const [oid, [ox, oz, o]] of positions) {
+        if (o.species === "wolf" || o.gone || o.fall > 0) continue;
+        const d = Math.max(Math.abs(o.x - s.x), Math.abs(o.y - s.y));
+        if (d < bestDist && d <= 6) { bestDist = d; best = [ox, oz]; }
+      }
+      if (!best) continue;
+      const dx = best[0] - px, dz = best[1] - pz, length = Math.hypot(dx, dz), yaw = Math.atan2(dx, dz);
+      const dash = 0.2, pitch = 0.36;
+      for (let d = 0.3; d + dash < length - 0.3 && dashCount < 800; d += pitch) {
+        const mid = d + dash / 2, u = mid / length;
+        this.dummy.position.set(px + dx * u, GROUND_Y + 0.7, pz + dz * u);
+        this.dummy.rotation.set(0, yaw, 0);
+        this.dummy.scale.set(0.07, 0.07, dash);
+        this.dummy.updateMatrix();
+        this.dashes.setMatrixAt(dashCount++, this.dummy.matrix);
+      }
+    }
+    this.dashes.count = dashCount;
+    this.dashes.instanceMatrix.needsUpdate = true;
+
+    while (this.carcassMeshes.length < scene.carcasses.length) {
+      const mesh = new THREE.Mesh(this.carcassGeometry, this.carcassMaterial);
+      this.scene.add(mesh); this.carcassMeshes.push(mesh);
+    }
+    this.carcassMeshes.forEach((mesh, i) => {
+      const c = scene.carcasses[i];
+      mesh.visible = !!c && c.meat > 0.05;
+      if (c) {
+        const size = clamp(0.2 + 0.09 * Math.sqrt(c.meat), 0.2, 0.7);
+        mesh.scale.set(size, size, size);
+        mesh.position.set(c.x - this.width / 2 + 0.5, GROUND_Y + size * 0.25, c.y - this.height / 2 + 0.5);
+      }
+    });
+  }
+
+  render() { this.renderer.render(this.scene, this.camera); }
+
+  pick(clientX, clientY) {
+    const rect = this.canvas.getBoundingClientRect();
+    const ndc = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
+    this.ray.setFromCamera(ndc, this.camera);
+    const hits = this.ray.intersectObjects(this.pickables || [], false);
+    return hits.length ? hits[0].object.userData.id : null;
+  }
+
+  worldOf(id) { const a = this.animals.get(id); return a ? { x: a.group.position.x, z: a.group.position.z } : null; }
+}
+
+/* ------------------------------------------------------------------ flat 2D fallback (also used when WebGL is missing) */
+class Flat2D {
+  constructor(canvas) { this.canvas = canvas; this.ctx = canvas.getContext("2d"); this.view = { x: 0, z: 0, zoom: 1 }; this.hits = []; }
+  size() { const r = this.canvas.parentElement.getBoundingClientRect(); const dpr = Math.min(devicePixelRatio || 1, 2);
+    this.canvas.width = r.width * dpr; this.canvas.height = r.height * dpr; this.w = r.width; this.h = r.height; this.dpr = dpr; }
+  build(store) { this.store = store; this.tiles = store.meta.tiles.join(""); this.width = store.meta.width; this.height = store.meta.height; }
+  draw(scene, selectedId) {
+    const { ctx, w, h } = this;
+    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    const cell = Math.min(w / this.width, h / this.height) * 0.96 * this.view.zoom;
+    const ox = (w - cell * this.width) / 2, oy = (h - cell * this.height) / 2;
+    this.cell = cell; this.ox = ox; this.oy = oy;
+    ctx.fillStyle = "#cfe4f5"; ctx.fillRect(0, 0, w, h);
+    const food = this.store.food(scene.k + (scene.f > 0 ? 1 : 0));
+    for (let i = 0; i < this.tiles.length; i++) {
+      const x = i % this.width, y = Math.floor(i / this.width), c = this.tiles[i];
+      ctx.fillStyle = c === "~" ? "#4d97d8" : c === "^" ? "#8b8d92" : c === "T" ? (food[i] > 1 ? "#2c6b33" : "#3f7a3b") : (food[i] > 0 ? "#58a94a" : "#a9a35a");
+      ctx.fillRect(ox + x * cell, oy + y * cell, cell + 0.5, cell + 0.5);
+    }
+    ctx.fillStyle = "#4a2f2a";
+    for (const c of scene.carcasses) { ctx.beginPath(); ctx.arc(ox + (c.x + 0.5) * cell, oy + (c.y + 0.5) * cell, cell * 0.22, 0, 7); ctx.fill(); }
+    this.hits = [];
+    const color = { rabbit: "#6250d6", deer: "#eb6834", wolf: "#2a78d6" };
+    for (const s of scene.animals) {
+      if (s.gone) continue;
+      const cx = ox + (s.x + 0.5) * cell, cy = oy + (s.y + 0.5) * cell, r = cell * (s.species === "rabbit" ? 0.2 : s.species === "deer" ? 0.3 : 0.3) * s.grow;
+      ctx.globalAlpha = s.action === "hide" ? 0.45 : 1; ctx.fillStyle = color[s.species]; ctx.strokeStyle = "#fcfcfb"; ctx.lineWidth = 2;
+      ctx.beginPath();
+      if (s.species === "rabbit") ctx.arc(cx, cy, r, 0, 7);
+      else if (s.species === "deer") ctx.rect(cx - r, cy - r, r * 2, r * 2);
+      else { ctx.moveTo(cx, cy - r * 1.2); ctx.lineTo(cx + r * 1.1, cy + r); ctx.lineTo(cx - r * 1.1, cy + r); ctx.closePath(); }
+      ctx.fill(); ctx.stroke(); ctx.globalAlpha = 1;
+      if (s.hesitated) { ctx.fillStyle = "#fff"; ctx.fillRect(cx - 4, cy - r - 9, 3, 8); ctx.fillRect(cx + 1, cy - r - 9, 3, 8); }
+      if (s.id === selectedId) { ctx.strokeStyle = "#2a78d6"; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(cx, cy, cell * 0.5, 0, 7); ctx.stroke(); }
+      this.hits.push([s.id, cx, cy]);
+    }
+  }
+  pick(clientX, clientY) {
+    const r = this.canvas.getBoundingClientRect(), x = clientX - r.left, y = clientY - r.top;
+    let best = null, bd = (this.cell || 20) * 0.7;
+    for (const [id, cx, cy] of this.hits) { const d = Math.hypot(cx - x, cy - y); if (d < bd) { bd = d; best = id; } }
+    return best;
+  }
+}
+
+/* ------------------------------------------------------------------ application */
+const state = {
+  store: null, T: 0, playing: false, speed: 1, selected: null, follow: false, flat: false,
+  rotation: 0, azimuth: 0, elevation: 0, zoom: 1, targetX: 0, targetZ: 0,
+  camAnim: null, live: null, thinking: false, ended: false,
+};
+
+const els = {
+  view: $("#view"), gl: $("#gl"), flat: $("#flat"), dropzone: $("#dropzone"), dropError: $("#drop-error"),
+  notice: $("#notice"), play: $("#play"), scrub: $("#scrub"), clock: $("#clock"), runinfo: $("#runinfo"),
+  mind: $("#mind-body"), events: $("#events"), pop: $("#popchart"), popTable: $("#pop-table"), tip: $("#tip"),
+  liveBadge: $("#live-badge"), liveText: $("#live-text"), flatToggle: $("#flat-toggle"),
+};
+
+let gl = null, flat2d = null, usingGL = false;
+try {
+  const probe = document.createElement("canvas");
+  if (new URLSearchParams(location.search).get("webgl") === "off" || !(probe.getContext("webgl2") || probe.getContext("webgl"))) throw new Error("no WebGL");
+  gl = new GL(els.gl);
+  usingGL = true;
+} catch (error) {
+  els.notice.hidden = false;
+  els.notice.textContent = "The 3D view needs WebGL, which is not available here. Showing the flat map instead.";
+  els.gl.hidden = true; els.flat.hidden = false;
+  els.flatToggle.hidden = true; $("#rot-left").hidden = true; $("#rot-right").hidden = true;
+}
+flat2d = new Flat2D(els.flat);
+
+const ISO_AZIMUTH = Math.PI / 4, ISO_ELEVATION = 55 * Math.PI / 180, FLAT_ELEVATION = 89.5 * Math.PI / 180;
+function targetAzimuth() { return (state.flat ? 0 : ISO_AZIMUTH) + state.rotation * Math.PI / 2; }
+function targetElevation() { return state.flat ? FLAT_ELEVATION : ISO_ELEVATION; }
+
+function animateCamera() {
+  const goal = { azimuth: targetAzimuth(), elevation: targetElevation() };
+  if (reduceMotion) { state.azimuth = goal.azimuth; state.elevation = goal.elevation; state.camAnim = null; return; }
+  state.camAnim = { from: { azimuth: state.azimuth, elevation: state.elevation }, goal, start: performance.now(), duration: 400 };
+}
+function stepCamera(now) {
+  const a = state.camAnim;
+  if (!a) return;
+  const t = clamp((now - a.start) / a.duration, 0, 1), e = easeInOut(t);
+  state.azimuth = lerp(a.from.azimuth, a.goal.azimuth, e);
+  state.elevation = lerp(a.from.elevation, a.goal.elevation, e);
+  if (t >= 1) state.camAnim = null;
+}
+state.azimuth = targetAzimuth(); state.elevation = targetElevation();
+
+function zoomLimits() {
+  if (!state.store) return [1, 1];
+  const fit = usingGL ? gl.fitWidth({ azimuth: state.azimuth, elevation: state.elevation }) : 1;
+  return [1, usingGL ? Math.max(1.5, fit / 8) : 4];
+}
+function setZoom(z) { const [lo, hi] = zoomLimits(); state.zoom = clamp(z, lo, hi); }
+
+/* ---- loading */
+function showDrop(message = "") {
+  els.dropzone.hidden = false; els.dropError.textContent = message; els.tip.hidden = true;
+}
+function load(data, { live = false } = {}) {
+  if (!data || data.format !== FORMAT) throw new Error(`That file is not a Jev Valley replay (expected ${FORMAT}).`);
+  state.store = new Store(data);
+  els.dropzone.hidden = true; els.tip.hidden = false;
+  els.play.disabled = false; els.scrub.disabled = false;
+  const meta = state.store.meta;
+  if (usingGL) gl.build(state.store);
+  flat2d.build(state.store);
+  resize();
+  els.scrub.max = String(Math.max(state.store.totalSteps, 1));
+  state.T = 0; state.selected = null; state.follow = false; state.ended = false;
+  state.playing = !live && !reduceMotion;
+  state.zoom = 1; state.targetX = 0; state.targetZ = 0;
+  buildHeader(meta);
+  renderPopTable();
+  setPlayLabel();
+  document.title = `Jev Valley, ${meta.run_id}`;
+}
+
+function buildHeader(meta) {
+  const brains = meta.brains || {};
+  const same = new Set(Object.values(brains)).size === 1;
+  const brainText = same ? `<b>${esc(brains.rabbit)}</b> for every species`
+    : ["rabbit", "deer", "wolf"].map((s) => `${s}s on <b>${esc(brains[s])}</b>`).join(", ");
+  const hes = meta.hesitate_below == null ? "off" : `below ${(+meta.hesitate_below).toFixed(2)} confidence`;
+  els.runinfo.innerHTML = `<span>Brain: ${brainText}</span><span>Seed <b>${esc(meta.seed)}</b></span><span>Hesitation <b>${hes}</b></span>`;
+}
+const esc = (value) => String(value).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+/* ---- playback */
+function setPlayLabel() {
+  els.play.textContent = state.playing ? "Pause" : "Play";
+  els.play.setAttribute("aria-label", state.playing ? "Pause" : "Play");
+}
+function togglePlay() {
+  if (!state.store) return;
+  if (state.ended && !state.live) { state.T = 0; state.ended = false; }
+  state.playing = !state.playing; setPlayLabel();
+}
+function seek(T) {
+  if (!state.store) return;
+  state.T = clamp(T, 0, state.store.lastStep);
+  state.ended = false;
+}
+function stepHours(n) {
+  state.playing = false; setPlayLabel();
+  seek(Math.round(state.T) + n);
+}
+
+const live = { lastArrival: 0, interval: 1000 };
+function advance(dtMs) {
+  const store = state.store;
+  if (!store || !state.playing) return;
+  if (state.live) {
+    const behind = store.lastStep - state.T;
+    if (behind <= 0) { state.thinking = true; return; }
+    state.thinking = false;
+    const rate = (1000 / clamp(live.interval, 300, 5000)) * state.speed * (behind > 3 ? 1 + behind / 3 : 1);
+    state.T = Math.min(store.lastStep, state.T + (dtMs / 1000) * rate);
+    return;
+  }
+  state.T += (dtMs / 1000) * state.speed;
+  if (state.T >= store.lastStep) { state.T = store.lastStep; state.playing = false; state.ended = true; setPlayLabel(); }
+}
+
+/* ---- panels */
+let lastPanelKey = "";
+function updatePanels(scene) {
+  const store = state.store;
+  const step = Math.round(state.T);
+  els.clock.textContent = clockText(step, store.startHour);
+  if (document.activeElement !== els.scrub) els.scrub.value = String(step);
+  const key = `${scene.k}:${scene.f > 0 ? 1 : 0}:${state.selected}`;
+  if (key === lastPanelKey) return;
+  lastPanelKey = key;
+  renderMind(scene);
+  renderEvents(scene.k + (scene.f > 0 ? 1 : 0));
+  drawPopulation();
+}
+
+function renderMind(scene) {
+  const store = state.store;
+  const id = state.selected;
+  if (!id) {
+    els.mind.innerHTML = '<p class="empty-hint">Click an animal in the valley to see its needs, what it chose, and why.</p>';
+    return;
+  }
+  const info = store.creatures[id];
+  const shown = scene.animals.find((a) => a.id === id);
+  const stepNow = scene.k + (scene.f > 0 ? 1 : 0);
+  const row = shown ? shown.row : store.rows(stepNow)?.get(id) || null;
+  const age = Math.max(0, (info.age0 || 0) + (Math.min(stepNow, info.died ?? stepNow) - info.born));
+  const lines = [];
+  lines.push(`<div class="who"><strong>${esc(info.name)} the ${esc(info.species)}</strong><span>${esc(info.personality)}</span><span>${Math.floor(age / 24)} days old</span></div>`);
+  if (row) {
+    lines.push(`<div class="meters">${meter("Hunger", row[ROW.energy], hungerWord(row[ROW.energy]))}${meter("Thirst", row[ROW.hydration], thirstWord(row[ROW.hydration]))}</div>`);
+    const action = row[ROW.action];
+    if (action) {
+      const conf = row[ROW.conf];
+      lines.push(`<div class="chose">Chose <b>${esc(ACTION_NAMES[action] || action)}</b>${conf >= 0 ? ` with ${conf}% confidence` : " (the model gave no answer, so it rested)"}${row[ROW.hesitated] ? '<span class="badge">Hesitated and froze</span>' : ""}</div>`);
+      const names = store.meta.actions[info.species];
+      const probs = row[ROW.probs];
+      if (probs && probs.length) {
+        lines.push('<div class="sub">Why it chose this</div><ul class="why">' + names.map((n, i) =>
+          `<li class="${n === action ? "chosen" : ""}"><span>${esc(ACTION_NAMES[n] || n)}</span><span class="track"><span class="fill" style="display:block;width:${probs[i]}%"></span></span><span class="num">${probs[i]}%</span></li>`).join("") + "</ul>");
+      }
+    } else lines.push('<div class="chose">Just born. It decides for the first time next hour.</div>');
+  }
+  const mem = store.memories(id, stepNow);
+  lines.push('<div class="sub">Recent memories</div>' + (mem.length ? `<ul class="memories">${mem.map((m) => `<li>${esc(m)}</li>`).join("")}</ul>` : '<p class="empty-hint">Nothing yet.</p>'));
+  if (info.died !== null && info.died !== undefined && info.died <= stepNow) {
+    lines.push(`<div class="fate">${esc(CAUSE_TEXT[info.cause] || info.cause)}, ${esc(clockText(info.died, store.startHour))}</div>`);
+  }
+  lines.push(`<div class="mind-actions"><button class="btn" id="follow" aria-pressed="${state.follow}">Follow</button><button class="btn" id="clear-sel">Clear</button></div>`);
+  els.mind.innerHTML = lines.join("");
+  $("#follow").onclick = () => { state.follow = !state.follow; $("#follow").setAttribute("aria-pressed", String(state.follow)); };
+  $("#clear-sel").onclick = () => select(null);
+}
+const meter = (label, pct, word) =>
+  `<div class="meter"><span>${label}</span><span class="track"><span class="fill" style="display:block;width:${pct}%"></span></span><span class="word">${word}</span></div>`;
+
+function renderEvents(step) {
+  const store = state.store;
+  const items = [];
+  for (let k = Math.min(step, store.lastStep); k >= 1 && items.length < 14; k--) {
+    const events = store.frames[k].events || [];
+    for (let i = events.length - 1; i >= 0 && items.length < 14; i--) items.push([k, events[i]]);
+  }
+  els.events.innerHTML = items.length
+    ? items.map(([k, text]) => `<li><time>${esc(clockText(k, store.startHour))}</time>${esc(text)}</li>`).join("")
+    : '<li class="empty-hint">Nothing has happened yet.</li>';
+}
+
+function cssVar(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+function drawPopulation() {
+  const store = state.store;
+  const canvas = els.pop, dpr = Math.min(devicePixelRatio || 1, 2);
+  const rect = canvas.getBoundingClientRect();
+  if (!rect.width) return;
+  canvas.width = rect.width * dpr; canvas.height = rect.height * dpr;
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const W = rect.width, H = rect.height, padL = 28, padR = 8, padT = 8, padB = 18;
+  ctx.clearRect(0, 0, W, H);
+  const total = Math.max(store.totalSteps, 1);
+  let max = 1;
+  for (const f of store.frames) for (const s of SPECIES) max = Math.max(max, f.pop[s]);
+  max = Math.ceil(max / 5) * 5;
+  const X = (k) => padL + (k / total) * (W - padL - padR), Y = (v) => padT + (1 - v / max) * (H - padT - padB);
+  ctx.strokeStyle = cssVar("--line"); ctx.lineWidth = 1; ctx.fillStyle = cssVar("--muted"); ctx.font = "11px system-ui, sans-serif";
+  ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  for (let i = 0; i <= 2; i++) { const v = (max / 2) * i, y = Math.round(Y(v)) + 0.5; ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke(); ctx.fillText(String(Math.round(v)), padL - 6, y); }
+  ctx.textAlign = "center"; ctx.textBaseline = "top";
+  const days = Math.round(total / 24);
+  for (let d = 0; d <= days; d += 5) ctx.fillText(String(d), X(d * 24), H - padB + 4);
+  const colors = { rabbit: cssVar("--rabbit"), deer: cssVar("--deer"), wolf: cssVar("--wolf") };
+  ctx.lineWidth = 2; ctx.lineJoin = "round"; ctx.lineCap = "round";
+  for (const s of SPECIES) {
+    ctx.strokeStyle = colors[s]; ctx.beginPath();
+    store.frames.forEach((f, k) => { const x = X(k), y = Y(f.pop[s]); if (k === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); });
+    ctx.stroke();
+  }
+  const now = clamp(Math.round(state.T), 0, store.lastStep), x = Math.round(X(now)) + 0.5;
+  ctx.strokeStyle = cssVar("--ink-2"); ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, H - padB); ctx.stroke();
+  for (const s of SPECIES) {
+    ctx.fillStyle = colors[s]; ctx.strokeStyle = cssVar("--surface"); ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(x, Y(store.frames[now].pop[s]), 4, 0, 7); ctx.fill(); ctx.stroke();
+  }
+}
+
+function renderPopTable() {
+  const store = state.store;
+  const rows = [];
+  for (let k = 0; k <= store.lastStep; k += 24) rows.push(`<tr><td>${esc(clockText(k, store.startHour))}</td><td>${store.frames[k].pop.rabbit}</td><td>${store.frames[k].pop.deer}</td><td>${store.frames[k].pop.wolf}</td></tr>`);
+  els.popTable.innerHTML = `<table><thead><tr><th>Time</th><th>Rabbits</th><th>Deer</th><th>Wolves</th></tr></thead><tbody>${rows.join("")}</tbody></table>`;
+}
+
+/* ---- selection and input */
+function select(id) {
+  state.selected = id; if (!id) state.follow = false; else els.tip.hidden = true;
+  lastPanelKey = "";
+}
+function pickAt(clientX, clientY) {
+  return usingGL && !els.gl.hidden ? gl.pick(clientX, clientY) : flat2d.pick(clientX, clientY);
+}
+
+const pointers = new Map();
+let dragMoved = 0, pinchStart = null;
+function activeCanvas() { return usingGL ? els.gl : els.flat; }
+for (const canvas of [els.gl, els.flat]) {
+  canvas.addEventListener("pointerdown", (e) => {
+    canvas.setPointerCapture(e.pointerId);
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    dragMoved = 0;
+    if (pointers.size === 2) { const [a, b] = [...pointers.values()]; pinchStart = { d: Math.hypot(a.x - b.x, a.y - b.y), zoom: state.zoom }; }
+  });
+  canvas.addEventListener("pointermove", (e) => {
+    const p = pointers.get(e.pointerId);
+    if (!p) return;
+    const dx = e.clientX - p.x, dy = e.clientY - p.y;
+    p.x = e.clientX; p.y = e.clientY;
+    if (pointers.size === 2 && pinchStart) {
+      const [a, b] = [...pointers.values()];
+      setZoom(pinchStart.zoom * Math.hypot(a.x - b.x, a.y - b.y) / pinchStart.d);
+      dragMoved = 99;
+      return;
+    }
+    dragMoved += Math.abs(dx) + Math.abs(dy);
+    if (dragMoved > 6 && state.zoom > 1.01 && !state.follow) panBy(dx, dy);
+  });
+  const end = (e) => {
+    const wasClick = dragMoved <= 6 && pointers.size === 1;
+    pointers.delete(e.pointerId);
+    if (pointers.size < 2) pinchStart = null;
+    if (wasClick && e.type === "pointerup") { const id = pickAt(e.clientX, e.clientY); select(id); }
+  };
+  canvas.addEventListener("pointerup", end);
+  canvas.addEventListener("pointercancel", end);
+  canvas.addEventListener("wheel", (e) => { e.preventDefault(); setZoom(state.zoom * (e.deltaY < 0 ? 1.12 : 1 / 1.12)); }, { passive: false });
+}
+function panBy(dx, dy) {
+  const rect = activeCanvas().getBoundingClientRect();
+  const perPixel = (usingGL ? gl.fitWidth({ azimuth: state.azimuth, elevation: state.elevation }) : 1) / state.zoom / rect.width;
+  const az = state.azimuth;
+  const right = [Math.cos(az), -Math.sin(az)], forward = [Math.sin(az), Math.cos(az)];
+  const k = state.flat ? 1 : 1 / Math.sin(state.elevation);
+  state.targetX -= (right[0] * dx - forward[0] * dy * k) * perPixel;
+  state.targetZ -= (right[1] * dx - forward[1] * dy * k) * perPixel;
+  clampTarget();
+}
+function clampTarget() {
+  if (!state.store) return;
+  state.targetX = clamp(state.targetX, -state.store.meta.width / 2, state.store.meta.width / 2);
+  state.targetZ = clamp(state.targetZ, -state.store.meta.height / 2, state.store.meta.height / 2);
+}
+
+function rotate(direction) { state.rotation += direction; animateCamera(); }
+$("#rot-left").onclick = () => rotate(-1);
+$("#rot-right").onclick = () => rotate(1);
+$("#zoom-in").onclick = () => setZoom(state.zoom * 1.3);
+$("#zoom-out").onclick = () => setZoom(state.zoom / 1.3);
+els.flatToggle.onclick = () => { state.flat = !state.flat; els.flatToggle.setAttribute("aria-pressed", String(state.flat)); animateCamera(); setZoom(state.zoom); };
+els.play.onclick = togglePlay;
+els.scrub.addEventListener("input", () => { seek(+els.scrub.value); });
+for (const button of document.querySelectorAll("[data-speed]")) {
+  button.onclick = () => {
+    state.speed = +button.dataset.speed;
+    for (const b of document.querySelectorAll("[data-speed]")) b.setAttribute("aria-pressed", String(b === button));
+  };
+}
+document.addEventListener("keydown", (e) => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const tag = e.target.tagName;
+  const typing = tag === "INPUT" && e.target.type !== "range";
+  if (typing) return;
+  const onButton = tag === "BUTTON";
+  if (e.key === " " && !onButton && tag !== "INPUT") { e.preventDefault(); togglePlay(); }
+  else if (e.key === "ArrowLeft" && tag !== "INPUT") { e.preventDefault(); stepHours(-1); }
+  else if (e.key === "ArrowRight" && tag !== "INPUT") { e.preventDefault(); stepHours(1); }
+  else if ((e.key === "q" || e.key === "Q") && usingGL) rotate(-1);
+  else if ((e.key === "e" || e.key === "E") && usingGL) rotate(1);
+  else if (e.key === "+" || e.key === "=") setZoom(state.zoom * 1.3);
+  else if (e.key === "-") setZoom(state.zoom / 1.3);
+  else if (e.key === "Escape") select(null);
+});
+
+/* ---- file loading */
+async function loadFile(file) {
+  try { load(JSON.parse(await file.text())); }
+  catch (error) { showDrop(error instanceof SyntaxError ? "That file is not valid JSON." : error.message); }
+}
+$("#choose").onclick = () => $("#file").click();
+$("#file").addEventListener("change", (e) => { if (e.target.files[0]) loadFile(e.target.files[0]); });
+window.addEventListener("dragover", (e) => { e.preventDefault(); els.dropzone.classList.add("over"); });
+window.addEventListener("dragleave", () => els.dropzone.classList.remove("over"));
+window.addEventListener("drop", (e) => { e.preventDefault(); els.dropzone.classList.remove("over"); if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]); });
+$("#load-sample").onclick = async () => {
+  for (const url of ["sample-replay.json", "../examples/sample-replay.json", "examples/sample-replay.json"]) {
+    try {
+      const response = await fetch(url);
+      if (response.ok) { load(await response.json()); return; }
+    } catch (error) { /* try the next location */ }
+  }
+  showDrop("The sample month was not found next to this page. Drop a replay file instead.");
+};
+
+/* ---- live mode */
+function startLive(url) {
+  state.live = { url };
+  els.liveBadge.classList.add("on");
+  els.liveText.textContent = "Live: waiting for the first hour";
+  els.dropzone.hidden = true;
+  els.tip.hidden = true;
+  const source = new EventSource(url);
+  source.addEventListener("meta", (e) => {
+    const data = JSON.parse(e.data);
+    load({ format: data.format, meta: data.meta, creatures: data.creatures || {}, frames: data.frames || [] }, { live: true });
+    state.live = { url }; state.playing = true; setPlayLabel();
+    els.tip.hidden = false;
+  });
+  source.addEventListener("frame", (e) => {
+    const frame = JSON.parse(e.data);
+    if (!state.store) return;
+    const now = performance.now();
+    if (live.lastArrival) live.interval = 0.6 * live.interval + 0.4 * (now - live.lastArrival);
+    live.lastArrival = now;
+    const { pace, new_creatures: newCreatures, notes, fates, ...rest } = frame;
+    state.store.addFrame(rest, { newCreatures, notes, fates });
+    if (pace) els.liveText.textContent = `Live: ${pace.hours_per_second.toFixed(1)} hours per second`;
+    state.thinking = false;
+    if (state.store.lastStep % 24 === 0) renderPopTable();
+    lastPanelKey = "";
+  });
+  source.addEventListener("end", () => {
+    els.liveText.textContent = "Live run finished and saved";
+    els.liveBadge.classList.remove("thinking"); source.close();
+  });
+  source.onerror = () => { els.liveText.textContent = "Live stream disconnected"; };
+}
+
+/* ---- main loop */
+function resize() {
+  if (usingGL) gl.size();
+  flat2d.size();
+  lastPanelKey = "";
+}
+window.addEventListener("resize", resize);
+new ResizeObserver(resize).observe(els.view);
+
+let lastNow = performance.now();
+function frame(now) {
+  const dt = Math.min(100, now - lastNow);
+  lastNow = now;
+  if (state.store) {
+    advance(dt);
+    stepCamera(now);
+    els.liveBadge.classList.toggle("thinking", !!state.live && state.thinking && state.playing);
+    // Let a one-finger swipe scroll the page while the whole valley is in view; panning needs the gesture once zoomed in.
+    els.view.style.touchAction = state.zoom > 1.01 ? "none" : "pan-y";
+    const scene = computeScene(state.store, state.T);
+    if (state.follow && state.selected) {
+      const pos = scene.animals.find((a) => a.id === state.selected);
+      if (pos && usingGL) {
+        const px = pos.x - state.store.meta.width / 2 + 0.5, pz = pos.y - state.store.meta.height / 2 + 0.5;
+        state.targetX = lerp(state.targetX, px, 0.12); state.targetZ = lerp(state.targetZ, pz, 0.12);
+      }
+    }
+    if (usingGL && !els.gl.hidden) {
+      const lighting = lightingAt(scene.hours);
+      gl.update(scene, { now, store: state.store }, lighting, state.selected);
+      gl.setCamera({ x: state.targetX, z: state.targetZ, azimuth: state.azimuth, elevation: state.elevation, zoom: state.zoom }, state.flat);
+      gl.render();
+    } else {
+      flat2d.view.zoom = state.zoom;
+      flat2d.draw(scene, state.selected);
+    }
+    updatePanels(scene);
+  }
+  requestAnimationFrame(frame);
+}
+
+/* ---- boot */
+function boot() {
+  const liveUrl = document.querySelector('meta[name="valley-live"]').content;
+  const embedded = $("#replay-data").textContent.trim();
+  if (liveUrl) { startLive(liveUrl); }
+  else if (embedded) {
+    try { load(JSON.parse(embedded)); } catch (error) { showDrop(error.message); }
+  } else showDrop();
+  requestAnimationFrame(frame);
+}
+window.valley = { state, computeScene, get gl() { return gl; } };  // handy for debugging in the console
+boot();
+</script>
+</body>
+</html>
