@@ -547,7 +547,8 @@ class Terrain {
   sample(field, x, z) {
     const fx = clamp((x + this.width / 2) * this.res - 0.5, 0, this.gw - 1.001), fz = clamp((z + this.height / 2) * this.res - 0.5, 0, this.gh - 1.001);
     const i = Math.floor(fx), j = Math.floor(fz), u = fx - i, v = fz - j, g = this.gw;
-    return lerp(lerp(field[j * g + i], field[j * g + i + 1], u), lerp(field[(j + 1) * g + i], field[(j + 1) * g + i + 1], u), v);
+    const value = lerp(lerp(field[j * g + i], field[j * g + i + 1], u), lerp(field[(j + 1) * g + i], field[(j + 1) * g + i + 1], u), v);
+    return value * (1 - smooth(this.outside(x, z) / 6));  // water, rock and woods taper off beyond the map instead of being stretched outward
   }
 
   outside(x, z) {  // tiles beyond the edge of the valley
@@ -560,7 +561,8 @@ class Terrain {
     const wet = smooth((this.sample(this.water, x, z) - 0.12) / 0.55);
     const land = 0.42 + 0.5 * n(x * 0.07, z * 0.07) + 0.14 * n(x * 0.33 + 40, z * 0.33);
     const rocky = this.sample(this.rock, x, z);
-    const out = Math.max(0, this.outside(x, z) + (n(x * 0.05 + 3, z * 0.05 - 1, 2) - 0.5) * 18);  // an uneven edge, so the ridges do not run parallel
+    const edge = this.outside(x, z);
+    const out = edge > 0 ? Math.max(0, edge + (n(x * 0.05 + 3, z * 0.05 - 1, 2) - 0.5) * 18 * smooth(edge / 6)) : 0;  // an uneven edge, so the ridges do not run parallel
     const ring = Math.pow(smooth((out - 4) / (HILL_MARGIN - 4)), 1.4);
     let h = lerp(land, -0.62 + 0.12 * n(x * 0.5, z * 0.5), wet * (1 - ring));
     h += 1.05 * smooth(rocky * 1.6) * (0.55 + 0.9 * n(x * 0.9 + 3, z * 0.9));
@@ -652,8 +654,8 @@ function buildTerrainGeometry(terrain, quality) {
 function buildWaterGeometry(terrain) {
   const step = 0.5;
   const xs = [], zs = [];
-  for (let v = -terrain.width / 2 - 3; v <= terrain.width / 2 + 3; v += step) xs.push(v);
-  for (let v = -terrain.height / 2 - 3; v <= terrain.height / 2 + 3; v += step) zs.push(v);
+  for (let v = -terrain.width / 2 - 9; v <= terrain.width / 2 + 9; v += step) xs.push(v);
+  for (let v = -terrain.height / 2 - 9; v <= terrain.height / 2 + 9; v += step) zs.push(v);
   const nx = xs.length, nz = zs.length;
   const positions = new Float32Array(nx * nz * 3), colors = new Float32Array(nx * nz * 4);
   const shallow = new THREE.Color(0x6fd0cf), deep = new THREE.Color(0x14507f), foam = new THREE.Color(0xe8f6f6), c = new THREE.Color();
@@ -1342,6 +1344,17 @@ class Scenery {
         const r = rand(), kind = r < 0.45 ? "pine" : r < 0.88 ? "oak" : "birch";
         treeLists[kind].push({ pos: [x, y - 0.04, z], yaw: rand() * 6.28, s: 0.85 + rand() * 0.75, color: tint(0xffffff, 0.16) });
       }
+    }
+    // the hills around the valley: woods that thin out with distance, broken by clearings, below the tree line
+    const outerNoise = makeNoise("belt"), edgeOf = (x, z) => terrain.outside(x, z);
+    const attempts = dense ? 5200 : 2100, reachX = width / 2 + HILL_MARGIN * 0.7, reachZ = height / 2 + HILL_MARGIN * 0.7;
+    for (let k = 0; k < attempts; k++) {
+      const x = (rand() * 2 - 1) * reachX, z = (rand() * 2 - 1) * reachZ, out = edgeOf(x, z);
+      if (out < 1.4 || out > 30) continue;
+      if (rand() > Math.pow(1 - out / 32, 1.5) * 0.9 || outerNoise(x * 0.07, z * 0.07, 2) < 0.4) continue;
+      const y = groundY(x, z);
+      if (y < SEA_LEVEL + 0.3 || y > 7.2) continue;
+      treeLists[rand() < 0.62 ? "pine" : rand() < 0.8 ? "oak" : "birch"].push({ pos: [x, y - 0.05, z], yaw: rand() * 6.28, s: 1.0 + rand() * 1.1, color: tint(0xffffff, 0.16) });
     }
     this.trees = [];
     for (const [kind, list] of Object.entries(treeLists)) {
