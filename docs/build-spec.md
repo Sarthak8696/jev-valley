@@ -918,6 +918,12 @@ Record every choice not covered above, and every change to a value in this docum
 | 2026-10-20 | Calibration counts only decisions whose source is `model`. Baseline brains get blunder counts but no calibration. Blunders per 1,000 decisions divide by decisions that were not fallbacks. | 8.4 says calibration is for model decisions, and 8.3 excludes fallbacks. |
 | 2026-10-20 | `first_extinction` is the clock text of the first hour any species reached 0. `mean_population` averages over hours 1 to N. A run is valid when fallbacks are at most 2% of all decisions across its brains. | 8.2 and ground rule 6, made precise. |
 | 2026-10-20 | Metrics gain a `hesitation` section: the threshold, the real decisions, how many froze, and the share. | The hesitation experiment needs to say how often animals froze. |
+| 2026-10-20 | `bench` asks for confirmation before any run that uses a model, using the spec's estimate of starting creatures x steps x 1.5. It stops early with a clear message if a key is missing. Finished runs are skipped on a rerun unless `--force`, and `--jobs` runs several in parallel. | Runs take hours, so they must be resumable. |
+| 2026-10-20 | Hesitation `off` reuses the survival run with the same brain and seed, because the configuration is identical, unless `--no-reuse-survival` is given. The results table says which survival run it came from. | Saves 20 model runs. The author listed this as a default. |
+| 2026-10-20 | Hesitation thresholds are read from `results/hesitation/thresholds.json`, written by `tune --thresholds`. `bench hesitation` refuses to run without it. | The author fixed the thresholds from the smoke runs. |
+| 2026-10-20 | The charts are SVG cards on the light chart surface, in both color schemes. Each brain keeps its color in every chart: Jev blue, Laya orange, rules aqua, random gray. Each also has its own marker shape, and every chart has a legend and a table in `summary.md`. Mixed-brain and hesitation groups reuse the brain color with a different line style or extra palette slots. | Aqua and magenta fall below 3:1 contrast on the light surface in the palette validator, so identity cannot rely on color alone. |
+| 2026-10-20 | The population chart shows the median over valid runs, counting a run that ended early as 0. Charts are skipped with a message if matplotlib is not installed. | matplotlib is optional. |
+| 2026-10-20 | `tests/test_bench.py` and `tests/test_charts.py` are added. | Phase 9's done condition needs tests. |
 
 ## Phase 5 tuning record
 

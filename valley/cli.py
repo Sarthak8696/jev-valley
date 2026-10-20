@@ -74,6 +74,23 @@ def build_parser() -> argparse.ArgumentParser:
     view.add_argument("replay", help="a replay.json file")
     view.add_argument("-o", "--output", default="valley.html")
 
+    bench = sub.add_parser("bench", help="run an experiment across seeds and brains, then summarise it")
+    bench.add_argument("experiment", choices=("survival", "hesitation", "rivals"))
+    bench.add_argument("--seeds", type=_seed_list, default=None, help="comma-separated seeds (default: the ten benchmark seeds)")
+    bench.add_argument("--days", type=int, default=30)
+    bench.add_argument("--brains", type=lambda t: [b for b in t.split(",") if b], default=None,
+                       help="run only these brains, comma-separated")
+    bench.add_argument("--out", default="results", help="results folder (default results)")
+    bench.add_argument("--jobs", type=int, default=1, help="runs in parallel (default 1)")
+    bench.add_argument("--yes", action="store_true", help="skip the cost confirmation for model brains")
+    bench.add_argument("--force", action="store_true", help="redo runs that are already finished")
+    bench.add_argument("--summary-only", action="store_true", help="only rebuild the summary and charts")
+    bench.add_argument("--reuse-survival", action=argparse.BooleanOptionalAction, default=True,
+                       help="use survival runs as the hesitation 'off' condition")
+    bench.add_argument("--thresholds-file", default=None, help="fixed hesitation thresholds (default results/hesitation/thresholds.json)")
+    bench.add_argument("--price-per-mtok", type=float, default=None, help="price per million input tokens, to report cost")
+    _add_model_settings(bench)
+
     tune = sub.add_parser("tune", help="check the balance targets, or fix hesitation thresholds from smoke runs")
     tune.add_argument("--check", action="store_true", help="run rules and random and report each target")
     tune.add_argument("--thresholds", nargs="+", metavar="RUN_DIR", default=None,
@@ -113,6 +130,20 @@ def _view(args) -> int:
     return 0
 
 
+def _bench(args) -> int:
+    from valley import bench
+    try:
+        outcome = bench.run_experiment(
+            args.experiment, base_dir=args.out, seeds=args.seeds or bench.BENCH_SEEDS, days=args.days,
+            brains=args.brains, jobs=args.jobs, yes=args.yes, force=args.force, summary_only=args.summary_only,
+            reuse_survival=args.reuse_survival, thresholds_file=args.thresholds_file,
+            batch=args.batch, workers=args.workers, timeout=args.timeout, price_per_mtok=args.price_per_mtok)
+    except (RuntimeError, ValueError, KeyError, FileNotFoundError) as error:
+        print(f"error: {error.args[0] if isinstance(error, KeyError) else error}", file=sys.stderr)
+        return 2
+    return 1 if outcome["aborted"] else 0
+
+
 def _tune(args) -> int:
     from valley import tuning
     if args.thresholds:
@@ -138,7 +169,7 @@ def _tune(args) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    handlers = {"run": _run, "view": _view, "tune": _tune}
+    handlers = {"run": _run, "view": _view, "bench": _bench, "tune": _tune}
     if args.command is None:
         parser.print_help()
         return 0
