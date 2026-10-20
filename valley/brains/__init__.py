@@ -6,12 +6,12 @@ from valley.brains.base import Brain
 from valley.world import derive_seed
 
 BASELINE_BRAINS = ("rules", "random")
-MODEL_BRAINS = ("jev", "laya")
+MODEL_BRAINS = ("jev",)
 BRAIN_NAMES = MODEL_BRAINS + BASELINE_BRAINS
 
 
 def make_brain(spec: str, seed: int = 0, **options) -> Brain:
-    """Build a brain from `jev`, `laya`, `rules`, `random`, or `system-one@{base_url}#{model}`.
+    """Build a brain from `jev`, `rules`, `random`, or `system-one@{base_url}#{model}`.
 
     `seed` only matters for `rules` and `random`, which draw from their own `brain_rng`.
     Model brains read their configuration from the environment; `options` are the settings of 7.3.

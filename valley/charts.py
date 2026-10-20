@@ -1,7 +1,7 @@
 """Draws the three result charts as SVG. matplotlib is an optional dependency.
 
 Colors follow the entity: a brain keeps its color in every chart. The palette is the
-validated reference palette (blue, orange, aqua, violet, magenta) plus a neutral gray
+validated reference palette (blue, aqua, violet, magenta) plus a neutral gray
 for the random floor. Aqua and magenta sit below 3:1 contrast on the light surface, so
 every series also has its own marker shape, a legend, and a table in `summary.md`.
 """
@@ -16,8 +16,8 @@ INK_MUTED = "#898781"
 GRID = "#e1e0d9"
 BASELINE = "#c3c2b7"
 
-BRAIN_COLORS = {"jev": "#2a78d6", "laya": "#eb6834", "rules": "#1baf7a", "random": "#898781"}
-BRAIN_MARKERS = {"jev": "o", "laya": "s", "rules": "^", "random": "D"}
+BRAIN_COLORS = {"jev": "#2a78d6", "rules": "#1baf7a", "random": "#898781"}
+BRAIN_MARKERS = {"jev": "o", "rules": "^", "random": "D"}
 EXTRA_COLORS = ["#6250d6", "#e87ba4", "#008300", "#e34948"]
 EXTRA_MARKERS = ["v", "P", "X", "h"]
 CONDITION_STYLES = {"off": "-", "p10": (0, (5, 2)), "p25": (0, (1.2, 1.6))}
@@ -37,7 +37,7 @@ def available() -> bool:
 
 
 def brain_of(group: str) -> str:
-    """The brain part of a group label such as `jev`, `jev-h-p10` or `wolf-jev_prey-laya`."""
+    """The brain part of a group label such as `jev`, `jev-h-p10` or `wolf-jev_prey-rules`."""
     return group.split("-h-")[0]
 
 
@@ -120,7 +120,7 @@ def _legend(fig, ax, groups, style, y_px: int, width_px: int):
 
 def _pretty(group: str) -> str:
     brain, condition = brain_of(group), condition_of(group)
-    names = {"jev": "Jev", "laya": "Laya", "rules": "Rules", "random": "Random"}
+    names = {"jev": "Jev", "rules": "Rules", "random": "Random"}
     text = names.get(brain, brain.replace("_", " ").replace("-", " "))
     if condition:
         text += {"off": ", no hesitation", "p10": ", hesitates below 10th percentile",

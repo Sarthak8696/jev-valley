@@ -26,7 +26,7 @@ def run(experiment, tmp_path, **kwargs):
 
 def test_survival_plan_covers_every_brain_and_seed():
     specs = plan_runs("survival", SEEDS, 30)
-    assert [s.id for s in specs] == [f"survival-{b}-seed{seed}" for b in ("jev", "laya", "rules", "random")
+    assert [s.id for s in specs] == [f"survival-{b}-seed{seed}" for b in ("jev", "rules", "random")
                                      for seed in SEEDS]
     assert all(set(s.brains.values()) == {s.brain_label} for s in specs)
 
@@ -37,56 +37,50 @@ def test_the_default_seeds_and_length():
     assert plan_runs("survival", bench.DEFAULT_SEEDS)[0].days == 30
 
 
-def test_the_default_set_of_model_runs_is_about_twenty():
-    thresholds = {"jev": {"p10": 0.5, "p25": 0.6}, "laya": {"p10": 0.4, "p25": 0.5}}
+def test_the_default_set_of_model_runs_is_about_fifteen():
+    thresholds = {"jev": {"p10": 0.5, "p25": 0.6}}
     survival = [s for s in plan_runs("survival", bench.DEFAULT_SEEDS) if s.uses_model]
     hesitation = [s for s in plan_runs("hesitation", bench.DEFAULT_SEEDS, thresholds=thresholds)
                   if s.uses_model and s.hesitation_label != "h-off"]  # `off` reuses the survival runs
-    assert len(survival) == 10 and len(hesitation) == 10
-    assert {s.brain_label for s in hesitation} == {"jev"}
+    assert len(survival) == 5 and len(hesitation) == 10
+    assert {s.brain_label for s in survival + hesitation} == {"jev"}
 
 
-def test_the_whole_design_is_still_one_flag_away():
-    thresholds = {"jev": {"p10": 0.5, "p25": 0.6}, "laya": {"p10": 0.4, "p25": 0.5}}
-    full = plan_runs("hesitation", bench.BENCH_SEEDS, thresholds=thresholds, brains=["jev", "laya"])
-    assert len(full) == 2 * 3 * 10
+def test_all_ten_seeds_are_one_flag_away():
+    thresholds = {"jev": {"p10": 0.5, "p25": 0.6}}
+    full = plan_runs("hesitation", bench.BENCH_SEEDS, thresholds=thresholds)
+    assert len(full) == 3 * 10
 
 
 def test_hesitation_plan_names_the_levels_and_uses_the_fixed_thresholds():
-    thresholds = {"jev": {"p10": 0.61, "p25": 0.74}, "laya": {"p10": 0.4, "p25": 0.5}}
-    specs = plan_runs("hesitation", [7], 30, thresholds=thresholds, brains=["jev", "laya"])
+    thresholds = {"jev": {"p10": 0.61, "p25": 0.74}}
+    specs = plan_runs("hesitation", [7], 30, thresholds=thresholds)
     assert [s.id for s in specs] == [
-        "hesitation-jev-h-off-seed7", "hesitation-jev-h-p10-seed7", "hesitation-jev-h-p25-seed7",
-        "hesitation-laya-h-off-seed7", "hesitation-laya-h-p10-seed7", "hesitation-laya-h-p25-seed7"]
+        "hesitation-jev-h-off-seed7", "hesitation-jev-h-p10-seed7", "hesitation-jev-h-p25-seed7"]
     by_id = {s.id: s for s in specs}
     assert by_id["hesitation-jev-h-off-seed7"].hesitate_below is None
     assert by_id["hesitation-jev-h-p10-seed7"].hesitate_below == 0.61
-    assert by_id["hesitation-laya-h-p25-seed7"].hesitate_below == 0.5
+    assert by_id["hesitation-jev-h-p25-seed7"].hesitate_below == 0.74
 
 
 def test_hesitation_needs_thresholds_for_every_brain():
     only_jev = {"jev": {"p10": 0.5, "p25": 0.6}}
     with pytest.raises(KeyError):
-        plan_runs("hesitation", [7], thresholds=only_jev, brains=["jev", "laya"])
+        plan_runs("hesitation", [7], thresholds=only_jev, brains=["jev", "rules"])
     assert len(plan_runs("hesitation", [7], thresholds=only_jev)) == 3  # jev alone is the default
     with pytest.raises(FileNotFoundError, match="tune --thresholds"):
         bench.load_thresholds("/no/such/file.json")
 
 
-def test_rivals_plan():
-    specs = plan_runs("rivals", [7], 30)
-    assert [s.id for s in specs] == ["rivals-wolf-jev_prey-laya-seed7", "rivals-wolf-laya_prey-jev-seed7"]
-    assert specs[0].brains == {"rabbit": "laya", "deer": "laya", "wolf": "jev"}
-
-
 def test_unknown_experiments_are_rejected():
     with pytest.raises(ValueError):
         plan_runs("nope", [1])
+    with pytest.raises(ValueError):
+        plan_runs("rivals", [1])  # the two-brain experiment was removed along with Laya
 
 
 def test_benchmark_runs_never_use_the_cache():
-    for experiment in ("survival", "rivals"):
-        assert all(s.cache_dir is None for s in plan_runs(experiment, [7], 30, log_requests=True))
+    assert all(s.cache_dir is None for s in plan_runs("survival", [7], 30, log_requests=True))
     parser = cli.build_parser()
     with pytest.raises(SystemExit):
         parser.parse_args(["bench", "survival", "--cache"])
@@ -162,15 +156,14 @@ def test_run_complete_checks_seed_and_threshold(tmp_path):
 
 
 def test_model_runs_need_confirmation_and_nothing_runs_without_it(tmp_path, monkeypatch):
-    for name in ("LAYA_BASE_URL", "LAYA_MODEL", "LAYA_API_KEY"):
-        monkeypatch.delenv(name, raising=False)
+    monkeypatch.delenv("SYSTEM_ONE_API_KEY", raising=False)
     monkeypatch.setattr(bench, "confirm", lambda question: False)
     messages = []
-    outcome = run_experiment("survival", base_dir=str(tmp_path), seeds=[3], days=2, brains=["laya"],
-                             out=messages.append)
+    outcome = run_experiment("survival", base_dir=str(tmp_path), seeds=[3], days=2,
+                             brains=["system-one@http://127.0.0.1:9#test-model"], out=messages.append)
     assert outcome["aborted"] is True and outcome["ran"] == []
-    assert any("call a model" in m and "28" not in m or "decisions" in m for m in messages)
-    assert not (tmp_path / "survival" / "survival-laya-seed3").exists()
+    assert any("call a model" in m and "decisions" in m for m in messages)
+    assert not (tmp_path / "survival" / "survival-system-one-seed3").exists()
 
 
 def test_a_missing_key_stops_the_run_before_any_prompt(tmp_path, monkeypatch):
@@ -291,13 +284,13 @@ def test_thresholds_come_from_each_brains_own_confidences(tmp_path):
     (tmp_path / "a").mkdir()
     (tmp_path / "b").mkdir()
     write_requests(tmp_path / "a" / "requests.jsonl", "jev", [i / 100 for i in range(50, 100)])
-    write_requests(tmp_path / "a" / "requests.jsonl", "laya", [i / 100 for i in range(1, 51)])
+    write_requests(tmp_path / "a" / "requests.jsonl", "other", [i / 100 for i in range(1, 51)])
     write_requests(tmp_path / "b" / "requests.jsonl", "jev", [i / 100 for i in range(100, 150)])
     result = tuning.thresholds_from_runs([str(tmp_path / "a"), str(tmp_path / "b")])
-    jev, laya = result["brains"]["jev"], result["brains"]["laya"]
-    assert jev["decisions"] == 100 and laya["decisions"] == 50
+    jev, other = result["brains"]["jev"], result["brains"]["other"]
+    assert jev["decisions"] == 100 and other["decisions"] == 50
     assert jev["p10"] == pytest.approx(0.59) and jev["p25"] == pytest.approx(0.74)
-    assert laya["p10"] == pytest.approx(0.05) and laya["p25"] == pytest.approx(0.13)
+    assert other["p10"] == pytest.approx(0.05) and other["p25"] == pytest.approx(0.13)
     assert result["percentiles"] == [10, 25] and result["source_runs"] == ["a", "b"]
     out = tmp_path / "t" / "thresholds.json"
     tuning.write_thresholds(str(out), result)
@@ -340,7 +333,7 @@ def test_the_bench_command_reports_missing_thresholds(tmp_path, capsys):
 
 def test_the_bench_command_exits_non_zero_when_not_confirmed(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(bench, "confirm", lambda q: False)
-    monkeypatch.delenv("LAYA_BASE_URL", raising=False)
-    code = cli.main(["bench", "survival", "--brains", "laya", "--seeds", "3", "--days", "2", "--out", str(tmp_path)])
+    monkeypatch.delenv("SYSTEM_ONE_API_KEY", raising=False)
+    code = cli.main(["bench", "survival", "--brains", "system-one@http://127.0.0.1:9#test-model", "--seeds", "3", "--days", "2", "--out", str(tmp_path)])
     assert code == 1
     assert "not confirmed" in capsys.readouterr().out

@@ -8,11 +8,11 @@ There is no bundled demo. Every run the viewer plays is one you make with a mode
 
 ## The question
 
-Which brain keeps the valley alive for a month? Every run uses the same maps, the same seeds and the same starting animals, and only the brain changes: Jev, Laya, a hand-written `rules` baseline, or `random`. A second question: does knowing when you are unsure help you survive? With hesitation on, an animal freezes for the hour when the model's confidence is low, and survival is compared with hesitation off.
+Which brain keeps the valley alive for a month? Every run uses the same maps, the same seeds and the same starting animals, and only the brain changes: Jev, a hand-written `rules` baseline, or `random`. A second question: does knowing when you are unsure help you survive? With hesitation on, an animal freezes for the hour when the model's confidence is low, and survival is compared with hesitation off.
 
 ## Results
 
-Results are produced by `python -m valley bench` and written to `results/<experiment>/` as `summary.md` and three charts. The full runs against Jev and Laya have not been done yet, so there is nothing to report here. Nothing in this README is typed by hand from a result.
+Results are produced by `python -m valley bench` and written to `results/<experiment>/` as `summary.md` and three charts. The full runs against Jev have not been done yet, so there is nothing to report here. Nothing in this README is typed by hand from a result.
 
 To reproduce them, see [Run it](#run-it).
 
@@ -81,10 +81,7 @@ Runs use a model, so they need a key. Keys are read only from the environment an
 
 ```bash
 export TYPESAFE_API_KEY=...           # required for jev; also TYPESAFE_BASE_URL, TYPESAFE_MODEL
-export LAYA_BASE_URL=http://localhost:8000   # check Laya's own docs for its port and model name
-export LAYA_MODEL=laya-auto                  # optional: LAYA_API_KEY
 python -m valley run --seed 7 --days 2 --log-requests    # a small first run with Jev, the default brain
-python -m valley run --brain laya --seed 7 --days 2 --log-requests
 ```
 
 Watch a run, either after the fact or as it is decided (live mode binds to 127.0.0.1 only):
@@ -99,12 +96,14 @@ The viewer loads Three.js from a CDN, so it needs a network connection. The offl
 Reproduce the results. `bench` prints how many decisions and requests it expects and asks before spending any, skips runs that are already done, and writes everything to `results/`:
 
 ```bash
-python -m valley bench survival       # jev, laya, rules and random on five seeds, 30 days each
+python -m valley bench survival       # jev, rules and random on five seeds, 30 days each
 python -m valley tune --thresholds runs/run-jev-seed7 -o results/hesitation/thresholds.json
 python -m valley bench hesitation     # Jev with hesitation off, and at its own 10th and 25th percentile confidence
 ```
 
-The default set is small on purpose (about 20 model runs): the first five benchmark seeds, and hesitation for Jev only. The full design is one flag away: add `--seeds 3,7,11,19,23,42,57,64,88,101` to either command, and `--brains jev,laya` to `bench hesitation` (with a Laya smoke run in `tune --thresholds`).
+The default set is small on purpose (about 15 model runs): the first five benchmark seeds. To use all ten, add `--seeds 3,7,11,19,23,42,57,64,88,101` to either command.
+
+Other servers that speak the same request format can be used with `--brain system-one@BASE_URL#MODEL` (an optional key goes in `SYSTEM_ONE_API_KEY`).
 
 The full specification and the log of every decision made while building it are in [docs/build-spec.md](docs/build-spec.md).
 

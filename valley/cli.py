@@ -35,7 +35,7 @@ def _add_run_arguments(parser: argparse.ArgumentParser, log_default: bool) -> No
     parser.add_argument("--size", type=_size, default=(28, 18), help="map size, such as 28x18")
     parser.add_argument("--max-creatures", type=int, default=50)
     parser.add_argument("--brain", default="jev",
-                        help="jev (the default, needs TYPESAFE_API_KEY), laya, system-one@URL#MODEL, or the offline "
+                        help="jev (the default, needs TYPESAFE_API_KEY), system-one@URL#MODEL, or the offline "
                              "baselines rules and random")
     parser.add_argument("--prey-brain", default=None, help="brain for rabbits and deer (default: --brain)")
     parser.add_argument("--wolf-brain", default=None, help="brain for wolves (default: --brain)")
@@ -85,13 +85,13 @@ def build_parser() -> argparse.ArgumentParser:
     view.add_argument("-o", "--output", default="valley.html")
 
     bench = sub.add_parser("bench", help="run an experiment across seeds and brains, then summarise it")
-    bench.add_argument("experiment", choices=("survival", "hesitation", "rivals"))
+    bench.add_argument("experiment", choices=("survival", "hesitation"))
     bench.add_argument("--seeds", type=_seed_list, default=None,
                        help="comma-separated seeds (default: the first five benchmark seeds, 3,7,11,19,23; "
                             "all ten are 3,7,11,19,23,42,57,64,88,101)")
     bench.add_argument("--days", type=int, default=30)
     bench.add_argument("--brains", type=lambda t: [b for b in t.split(",") if b], default=None,
-                       help="run only these brains, comma-separated (hesitation defaults to jev; add laya with --brains jev,laya)")
+                       help="run only these brains, comma-separated (survival defaults to jev, rules and random; hesitation to jev)")
     bench.add_argument("--out", default="results", help="results folder (default results)")
     bench.add_argument("--jobs", type=int, default=1, help="runs in parallel (default 1)")
     bench.add_argument("--yes", action="store_true", help="skip the cost confirmation for model brains")

@@ -24,13 +24,11 @@ from valley.tuning import BENCH_SEEDS
 from valley.world import DEFAULT_HEIGHT, DEFAULT_MAX_CREATURES, DEFAULT_WIDTH
 
 PREY = ("rabbit", "deer")
-EXPERIMENTS = ("survival", "hesitation", "rivals")
-DEFAULT_BRAINS = {"survival": ("jev", "laya", "rules", "random"), "hesitation": ("jev",)}
+EXPERIMENTS = ("survival", "hesitation")
+DEFAULT_BRAINS = {"survival": ("jev", "rules", "random"), "hesitation": ("jev",)}
 # `bench` defaults to the first five benchmark seeds and to hesitation for Jev only, which keeps the set of
-# model runs small (about 20). The full design is `--seeds` with all of BENCH_SEEDS and `--brains jev,laya`.
+# model runs small (about 20). The full set of seeds is `--seeds` with all of BENCH_SEEDS.
 DEFAULT_SEEDS = BENCH_SEEDS[:5]
-RIVALS = {"wolf-jev_prey-laya": {"wolf": "jev", "prey": "laya"},
-          "wolf-laya_prey-jev": {"wolf": "laya", "prey": "jev"}}
 HESITATION_LEVELS = ("off", "p10", "p25")
 DECISIONS_PER_CREATURE_HOUR = 1.5  # the spec's estimate: starting creatures x steps x 1.5
 
@@ -198,11 +196,6 @@ def plan_runs(experiment: str, seeds, days: int = 30, brains=None, thresholds: d
                 for seed in seeds:
                     specs.append(RunSpec(seed, {k: brain for k in SPECIES_ORDER}, "hesitation", days,
                                          hesitate_below=value, hesitation_label=f"h-{level}", **common))
-    elif experiment == "rivals":
-        for roles in RIVALS.values():
-            for seed in seeds:
-                mapping = {"rabbit": roles["prey"], "deer": roles["prey"], "wolf": roles["wolf"]}
-                specs.append(RunSpec(seed, mapping, "rivals", days, **common))
     else:
         raise ValueError(f"unknown experiment {experiment!r}; use one of {', '.join(EXPERIMENTS)}")
     return specs

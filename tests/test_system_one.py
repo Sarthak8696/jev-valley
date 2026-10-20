@@ -111,7 +111,7 @@ def test_headers_carry_the_key_only_in_authorization():
 
 def test_no_authorization_header_without_a_key():
     t = FakeTransport()
-    SystemOneBrain("laya", "http://localhost:8000", "laya-auto", None, transport=t).decide([request()])
+    SystemOneBrain("local", "http://localhost:8000", "local-model", None, transport=t).decide([request()])
     assert t.calls[0]["headers"] == {"Content-Type": "application/json"}
     assert t.calls[0]["url"] == "http://localhost:8000/v1/systemone"
 
@@ -392,8 +392,7 @@ def test_there_is_no_cache_by_default():
 
 # -- configuration from the environment -------------------------------------------------
 
-ENV_NAMES = ["TYPESAFE_API_KEY", "TYPESAFE_BASE_URL", "TYPESAFE_MODEL", "LAYA_BASE_URL", "LAYA_MODEL",
-             "LAYA_API_KEY", "SYSTEM_ONE_API_KEY"]
+ENV_NAMES = ["TYPESAFE_API_KEY", "TYPESAFE_BASE_URL", "TYPESAFE_MODEL", "SYSTEM_ONE_API_KEY"]
 
 
 @pytest.fixture
@@ -419,16 +418,17 @@ def test_jev_defaults_and_overrides(clean_env):
     assert (b.batch, b.workers, b.timeout) == (10, 2, 5)
 
 
-def test_laya_defaults_and_optional_key(clean_env):
-    b = make_brain("laya")
-    assert b.name == "laya" and b.url == "http://localhost:8000/v1/systemone" and b.model == "laya-auto"
+def test_a_generic_server_has_an_optional_key(clean_env):
+    b = make_brain("system-one@http://localhost:9000#small")
     assert b._headers() == {"Content-Type": "application/json"}
-    clean_env.setenv("LAYA_BASE_URL", "http://localhost:9000")
-    clean_env.setenv("LAYA_MODEL", "laya-small")
-    clean_env.setenv("LAYA_API_KEY", "k")
-    b = make_brain("laya")
-    assert b.url == "http://localhost:9000/v1/systemone" and b.model == "laya-small"
+    clean_env.setenv("SYSTEM_ONE_API_KEY", "k")
+    b = make_brain("system-one@http://localhost:9000#small")
     assert b._headers()["Authorization"] == "Bearer k"
+
+
+def test_laya_is_not_a_brain_any_more():
+    with pytest.raises(ValueError):
+        make_brain("laya")
 
 
 def test_other_servers_use_the_system_one_spec(clean_env):

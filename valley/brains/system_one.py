@@ -1,4 +1,4 @@
-"""The System One client, used for both Jev and Laya.
+"""The System One client, used for Jev and for any other server that speaks the same API.
 
 Every creature gets one `Choice` question. Several creatures are batched into one
 request, and requests run in parallel. If a call fails, or an answer is missing or
@@ -343,11 +343,6 @@ def make_system_one_brain(spec: str, batch: int = DEFAULT_BATCH, workers: int = 
         name = "jev"
         base_url = env.get("TYPESAFE_BASE_URL") or "https://api.typesafe.ai"
         model = env.get("TYPESAFE_MODEL") or "jev-latest"
-    elif spec == "laya":
-        name = "laya"
-        api_key = env.get("LAYA_API_KEY") or None
-        base_url = env.get("LAYA_BASE_URL") or "http://localhost:8000"
-        model = env.get("LAYA_MODEL") or "laya-auto"
     elif spec.startswith("system-one@"):
         location = spec[len("system-one@"):]
         base_url, _, model = location.partition("#")

@@ -141,9 +141,9 @@ def test_run_one_writes_the_replay_and_returns_the_totals(tmp_path):
 def test_labels_and_run_ids():
     rules = {"rabbit": "rules", "deer": "rules", "wolf": "rules"}
     assert brain_label(rules) == "rules"
-    mixed = {"rabbit": "laya", "deer": "laya", "wolf": "jev"}
-    assert brain_label(mixed) == "wolf-jev_prey-laya"
-    assert RunSpec(seed=7, brains=mixed, experiment="rivals").id == "rivals-wolf-jev_prey-laya-seed7"
+    mixed = {"rabbit": "rules", "deer": "rules", "wolf": "jev"}
+    assert brain_label(mixed) == "wolf-jev_prey-rules"
+    assert RunSpec(seed=7, brains=mixed, experiment="mixed").id == "mixed-wolf-jev_prey-rules-seed7"
     assert RunSpec(seed=7, brains={s: "jev" for s in rules}, experiment="survival").id == "survival-jev-seed7"
     assert RunSpec(seed=7, brains={s: "jev" for s in rules}, experiment="hesitation",
                    hesitate_below=0.3, hesitation_label="h-p10").id == "hesitation-jev-h-p10-seed7"
