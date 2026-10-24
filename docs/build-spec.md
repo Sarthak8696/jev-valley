@@ -745,7 +745,7 @@ If WebGL is unavailable, show a plain message that says the 3D view needs WebGL 
 - **Selection.** Clicking an animal (raycast) draws a ring under it, shows its name above it, and opens the mind panel. In full screen, where the panels are off screen, a small card shows its name, what it chose and how sure it was.
 - **Full screen.** A button, or `F`, makes the view and the timeline fill the screen (the browser's own full screen where it exists, otherwise the same layout covering the page, as on an iPhone).
 - **Readability helpers.** A hunting wolf has a dashed line to its target. A hiding animal crouches with its ears back. A hesitating animal shows a small pause marker above it.
-- **Quality.** `?quality=low` or `?quality=high` forces a setting; by default phones and small machines get fewer plants, smaller shadows and a lower resolution. The resolution also drops by itself when the frame rate falls and returns when there is room.
+- **Quality.** `?quality=low` or `?quality=high` forces a setting; by default phones and small machines get fewer plants, smaller shadows and a lower resolution. The resolution also drops by itself, in steps of 0.25 down to 0.85, when the median frame time over a window is well above the display's own frame time for two windows in a row; it never rises again, and `?resolution=full` turns the stepping down off.
 
 ### 10.3 Flat map
 

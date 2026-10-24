@@ -139,6 +139,7 @@ def _run(args) -> int:
     final = sim.frames[-1]["pop"]
     print(f"{spec.id}: {sim.step_no} hours, final rabbits {final['rabbit']}, deer {final['deer']}, wolves {final['wolf']}")
     print(f"replay: {result['paths']['replay']} ({result['replay_bytes'] / 1024:.0f} KB)")
+    print(f"watch it: python -m valley view {result['paths']['replay']} -o valley.html   (then open valley.html in a browser)")
     for brain, cost in result["metrics"]["cost"].items():
         if cost["requests"]:
             latency = f", median {cost['latency_ms_p50']:.0f} ms per request" if cost["latency_ms_p50"] is not None else ""

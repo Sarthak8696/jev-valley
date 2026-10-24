@@ -1587,8 +1587,9 @@ const turnToward = (from, to, maxStep) => {
 };
 
 class GL {
-  constructor(canvas, quality) {
+  constructor(canvas, quality, fixedResolution = false) {
     this.canvas = canvas; this.quality = quality;
+    this.fixedResolution = fixedResolution;  // ?resolution=full: never step the resolution down
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: quality !== "low", powerPreference: "high-performance" });
     this.maxDpr = Math.min(window.devicePixelRatio || 1, quality === "low" ? 1.5 : 2);
     this.dpr = this.maxDpr;
@@ -1866,7 +1867,7 @@ class GL {
    * between two sizes. "Cannot keep up" is judged against this display's own frame time, from the median of a window of
    * frames, and only when two windows in a row are slow: one hitch (a background tab, a busy moment) changes nothing. */
   watchFrameRate(frameMs) {
-    if (document.hidden) { this.samples.length = 0; this.slowWindows = 0; return; }
+    if (document.hidden || this.fixedResolution) { this.samples.length = 0; this.slowWindows = 0; return; }
     this.samples.push(frameMs);
     if (this.samples.length < 90) return;
     const sorted = [...this.samples].sort((a, b) => a - b);
@@ -1960,7 +1961,7 @@ let gl = null, flat2d = null, usingGL = false;
 try {
   const probe = document.createElement("canvas");
   if (params.get("webgl") === "off" || !(probe.getContext("webgl2") || probe.getContext("webgl"))) throw new Error("no WebGL");
-  gl = new GL(els.gl, quality);
+  gl = new GL(els.gl, quality, params.get("resolution") === "full");
   usingGL = true;
 } catch (error) {
   console.warn(error);

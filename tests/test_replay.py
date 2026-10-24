@@ -190,6 +190,13 @@ def test_the_run_command_reports_a_missing_key_without_a_traceback(tmp_path, mon
     assert "TYPESAFE_API_KEY" in err and "Traceback" not in err
 
 
+def test_the_run_command_says_how_to_watch_the_replay(tmp_path, capsys):
+    out = tmp_path / "x"
+    assert cli.main(["run", "--brain", "rules", "--days", "1", "--out", str(out), "--quiet"]) == 0
+    printed = capsys.readouterr().out
+    assert f"watch it: python -m valley view {out / 'replay.json'} -o valley.html" in printed
+
+
 def test_the_run_command_stops_on_a_model_error_and_saves_nothing(tmp_path, capsys):
     out = tmp_path / "x"
     code = cli.main(["run", "--brain", "system-one@http://127.0.0.1:9#test-model", "--days", "1", "--out", str(out), "--quiet"])
@@ -278,6 +285,8 @@ def test_the_viewer_redraws_at_once_after_a_resize_and_judges_speed_against_the_
     # the resolution only ever steps down, after two slow windows in a row, and relative to the display's frame time
     assert "watchFrameRate(frameMs)" in html and "this.slowWindows >= 2" in html and "this.refresh * 1.7" in html
     assert "avg < 13" not in html and "this.dpr + 0.1" not in html
+    # ?resolution=full switches the stepping down off, for anyone who prefers a steady picture to a steady speed
+    assert 'params.get("resolution") === "full"' in html and "document.hidden || this.fixedResolution" in html
 
 
 def test_the_viewer_reads_the_answers_from_the_eleventh_item_of_a_row_and_shows_them():
