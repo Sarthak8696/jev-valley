@@ -30,6 +30,7 @@ def replay_meta(sim, run_id: str) -> dict:
         "hesitate_below": sim.hesitate_below,
         "actions": {key: list(SPECIES[key].actions) for key in SPECIES_ORDER},
         "max_creatures": sim.max_creatures,
+        "questions": "rich" if sim.rich else "basic",
         "version": __version__,
     }
 

@@ -237,8 +237,9 @@ def test_cost_metrics_per_brain():
 
 def test_compute_metrics_has_every_section():
     m = compute_metrics(fake_replay([(16, 7, 3)] * 3))
-    assert set(m) == {"run_id", "seed", "brains", "hesitate_below", "survival", "hesitation", "blunders",
+    assert set(m) == {"run_id", "seed", "brains", "hesitate_below", "questions", "survival", "hesitation", "blunders",
                       "calibration", "cost"}
+    assert m["questions"] == "basic"  # a replay written before the question modes existed counts as basic
 
 
 def test_run_one_writes_metrics_for_a_rules_run(tmp_path):

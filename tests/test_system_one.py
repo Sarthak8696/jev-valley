@@ -5,7 +5,7 @@ import time
 import pytest
 
 from valley.brains import make_brain
-from valley.brains.base import DecisionError, DecisionRequest
+from valley.brains.base import DecisionError, DecisionRequest, Question
 from valley.brains.system_one import (
     BATCH_SENTENCE, INSTRUCTIONS, HttpResult, ResponseCache, SystemOneBrain, TransportError,
     make_system_one_brain,
@@ -492,3 +492,128 @@ def test_the_log_path_and_cache_path_are_passed_through(clean_env, tmp_path):
     clean_env.setenv("TYPESAFE_API_KEY", KEY)
     b = make_system_one_brain("jev", log_path=str(tmp_path / "x.jsonl"), cache_path=str(tmp_path / "c.jsonl"))
     assert b.log_path.endswith("x.jsonl") and b.cache is not None
+
+
+# -- the extra score and noul questions of the rich mode ------------------------------------
+
+LEVELS = ["calm", "relaxed", "watchful", "alert", "on guard"]
+ALERT_Q = Question("alert", "score", "How alert should this animal be?", LEVELS)
+BREED_Q = Question("breed", "noul", "Is now a good time to have young?", {"true": "yes", "false": "no"})
+WEAK_Q = Question("weak:d4", "score", "How weak does Pip look?", LEVELS)
+
+
+def rich_request(cid="r1", questions=None):
+    r = request(cid)
+    r.questions = list(questions if questions is not None else [ALERT_Q, BREED_Q])
+    return r
+
+
+def score_answer(value):
+    return {"type": "score", "score": value, "confidence": 0.9, "legend": {str(i): t for i, t in enumerate(LEVELS)},
+            "probabilities": {str(i): 0.2 for i in range(5)}}
+
+
+def noul_answer(value):
+    return {"type": "noul", "noul": value}
+
+
+def rich_handler(overrides=None):
+    """Answers every question by its type, with `overrides` (question id -> answer, or None to leave it out)."""
+    def handle(body, n):
+        answers = {}
+        for qid, question in body["questions"].items():
+            answers[qid] = {"choice": lambda: answer(), "score": lambda: score_answer(3.2), "noul": lambda: noul_answer(0.25)}[question["type"]]()
+        for qid, replacement in (overrides or {}).items():
+            if replacement is None:
+                answers.pop(qid, None)
+            else:
+                answers[qid] = replacement
+        return ok(answers)
+    return handle
+
+
+def test_a_single_request_carries_the_extra_questions_with_plain_ids():
+    t = FakeTransport(rich_handler())
+    brain(t).decide([rich_request("r1")])
+    questions = t.calls[0]["body"]["questions"]
+    assert list(questions) == ["action", "alert", "breed"]
+    assert questions["alert"] == {"type": "score", "instructions": ALERT_Q.instructions, "criteria": LEVELS}
+    assert questions["breed"] == {"type": "noul", "instructions": BREED_Q.instructions, "criteria": {"true": "yes", "false": "no"}}
+    assert questions["action"]["type"] == "choice"
+
+
+def test_a_batch_names_each_extra_question_after_its_creature():
+    t = FakeTransport(rich_handler())
+    wolf = rich_request("w1", [WEAK_Q, BREED_Q])
+    brain(t).decide([rich_request("r1"), wolf])
+    questions = t.calls[0]["body"]["questions"]
+    assert list(questions) == ["r1", "w1", "r1.alert", "r1.breed", "w1.weak.d4", "w1.breed"]
+    sentence = BATCH_SENTENCE.format(id="w1")
+    assert questions["w1.weak.d4"]["instructions"] == f"{WEAK_Q.instructions} {sentence}"
+    assert questions["r1.alert"]["instructions"].endswith(BATCH_SENTENCE.format(id="r1"))
+
+
+def test_score_and_noul_answers_come_back_as_numbers_by_question_key():
+    t = FakeTransport(rich_handler({"r2.alert": score_answer(4.0), "r2.breed": noul_answer(1.0)}))
+    first, second = brain(t).decide([rich_request("r1"), rich_request("r2")])
+    assert first.extras == {"alert": 3.2, "breed": 0.25}
+    assert second.extras == {"alert": 4.0, "breed": 1.0}
+    assert first.choice == "eat"
+
+
+def test_a_score_a_hair_outside_its_levels_is_clamped_but_a_real_overshoot_is_an_error():
+    t = FakeTransport(rich_handler({"alert": score_answer(4.0000001)}))
+    assert brain(t).decide([rich_request("r1")])[0].extras["alert"] == 4.0
+    with pytest.raises(DecisionError, match="outside 0 to 4"):
+        brain(FakeTransport(rich_handler({"alert": score_answer(4.5)}))).decide([rich_request("r1")])
+
+
+@pytest.mark.parametrize("override, message", [
+    ({"alert": None}, "it is missing"),
+    ({"alert": noul_answer(0.5)}, "not a `score` answer"),
+    ({"breed": score_answer(1.0)}, "not a `noul` answer"),
+    ({"breed": noul_answer(1.4)}, "outside 0 to 1"),
+    ({"breed": noul_answer(-0.2)}, "outside 0 to 1"),
+    ({"breed": {"type": "noul", "noul": "yes"}}, "not a number"),
+    ({"breed": {"type": "noul", "noul": True}}, "not a number"),
+    ({"alert": {"type": "score", "confidence": 0.5}}, "not a number"),
+])
+def test_a_missing_or_invalid_extra_answer_stops_the_run(override, message):
+    with pytest.raises(DecisionError) as error:
+        brain(FakeTransport(rich_handler(override))).decide([rich_request("r1")])
+    assert message in str(error.value)
+    assert "r1" in str(error.value)
+
+
+def test_an_extra_answer_that_is_wrong_in_a_batch_names_the_creature_and_the_question():
+    t = FakeTransport(rich_handler({"w1.weak.d4": noul_answer(0.5)}))
+    with pytest.raises(DecisionError, match=r"'weak:d4' answer for w1 is unusable"):
+        brain(t).decide([rich_request("r1"), rich_request("w1", [WEAK_Q])])
+
+
+def test_a_response_captured_from_the_real_api_is_read_correctly():
+    """The answers the live Jev API gave on 2026-10-25 to a choice, a score and a noul question in one request."""
+    real = {"model": "jev-1.14.0", "answers": {
+        "action": {"type": "choice", "choice": "flee", "confidence": 0.53, "probabilities": {"eat": 0.25, "flee": 0.65, "hide": 0.1, "rest": 0.0}},
+        "alert": {"type": "score", "score": 3.88, "confidence": 0.92,
+                  "legend": {"0": "a", "1": "b", "2": "c", "3": "d", "4": "e"},
+                  "probabilities": {"0": 0.0, "1": 0.0, "2": 0.0, "3": 0.1, "4": 0.9}},
+        "breed": {"type": "noul", "noul": 0.04}}, "usage": {"input_tokens": 586, "output_tokens": 78}}
+
+    def handler(body, n):
+        return HttpResult(200, {}, json.dumps(real).encode())
+
+    r = DecisionRequest("r1", {"id": "r1"}, {"eat": "", "flee": "", "hide": "", "rest": ""}, {}, [ALERT_Q, BREED_Q])
+    decision = brain(FakeTransport(handler)).decide([r])[0]
+    assert (decision.choice, decision.confidence) == ("flee", 0.53)
+    assert decision.extras == {"alert": 3.88, "breed": 0.04}
+
+
+def test_the_extra_questions_are_logged_with_the_request(tmp_path):
+    log = tmp_path / "requests.jsonl"
+    b = brain(FakeTransport(rich_handler()), log_path=str(log))
+    b.decide([rich_request("r1")])
+    b.close()
+    line = json.loads(log.read_text().splitlines()[0])
+    assert set(line["request"]["questions"]) == {"action", "alert", "breed"}
+    assert line["response"]["answers"]["breed"] == {"type": "noul", "noul": 0.25}

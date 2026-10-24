@@ -37,6 +37,9 @@ def _add_run_arguments(parser: argparse.ArgumentParser, log_default: bool) -> No
     parser.add_argument("--days", type=int, default=30)
     parser.add_argument("--size", type=_size, default=(DEFAULT_WIDTH, DEFAULT_HEIGHT), help=f"map size, such as {DEFAULT_WIDTH}x{DEFAULT_HEIGHT}")
     parser.add_argument("--max-creatures", type=int, default=DEFAULT_MAX_CREATURES)
+    parser.add_argument("--questions", choices=("rich", "basic"), default="rich",
+                        help="rich (the default) also asks score and noul questions and the world reacts to the answers; "
+                             "basic asks only which action to take")
     parser.add_argument("--brain", default="jev",
                         help="jev (the default, needs TYPESAFE_API_KEY), system-one@URL#MODEL, or the offline "
                              "baselines rules and random")
@@ -59,7 +62,7 @@ def _run_spec(args, experiment: str):
     return bench.RunSpec(
         seed=args.seed, brains={"rabbit": prey, "deer": prey, "wolf": wolf}, experiment=experiment, days=args.days,
         width=args.size[0], height=args.size[1], max_creatures=args.max_creatures,
-        hesitate_below=args.hesitate_below, batch=args.batch, workers=args.workers, timeout=args.timeout,
+        hesitate_below=args.hesitate_below, questions=args.questions, batch=args.batch, workers=args.workers, timeout=args.timeout,
         log_requests=args.log_requests, cache_dir=CACHE_DIR if args.cache else None, run_id=args.run_id,
         options={"max_retries": args.retries})
 
@@ -105,6 +108,7 @@ def build_parser() -> argparse.ArgumentParser:
                        help="use survival runs as the hesitation 'off' condition")
     bench.add_argument("--thresholds-file", default=None, help="fixed hesitation thresholds (default results/hesitation/thresholds.json)")
     bench.add_argument("--price-per-mtok", type=float, default=None, help="price per million input tokens, to report cost")
+    bench.add_argument("--questions", choices=("rich", "basic"), default="rich", help="question mode (default rich)")
     _add_model_settings(bench)
 
     tune = sub.add_parser("tune", help="check the balance targets, or fix hesitation thresholds from smoke runs")
@@ -191,8 +195,8 @@ def _bench(args) -> int:
             args.experiment, base_dir=args.out, seeds=args.seeds or bench.DEFAULT_SEEDS, days=args.days,
             brains=args.brains, jobs=args.jobs, yes=args.yes, force=args.force, summary_only=args.summary_only,
             reuse_survival=args.reuse_survival, thresholds_file=args.thresholds_file,
-            batch=args.batch, workers=args.workers, timeout=args.timeout, price_per_mtok=args.price_per_mtok,
-            options={"max_retries": args.retries})
+            questions=args.questions, batch=args.batch, workers=args.workers, timeout=args.timeout,
+            price_per_mtok=args.price_per_mtok, options={"max_retries": args.retries})
     except DecisionError as error:
         print(f"error: the experiment stopped at the first model error. {error}", file=sys.stderr)
         print("Runs that had already finished are kept. Run the same command again to continue.", file=sys.stderr)

@@ -6,7 +6,7 @@ import pytest
 from valley import bench, cli, tuning
 from valley.bench import (
     RunSpec, aggregate_group, estimate, plan_runs, render_markdown, resolve_dir, run_complete, run_dir,
-    run_experiment, survival_twin,
+    run_experiment, run_one, survival_twin,
 )
 
 SEEDS = [3, 7]
@@ -153,6 +153,17 @@ def test_run_complete_checks_seed_and_threshold(tmp_path):
     assert not run_complete(run_dir(str(tmp_path), spec), other)
     frozen = RunSpec(3, spec.brains, "survival", 2, hesitate_below=0.3)
     assert not run_complete(run_dir(str(tmp_path), spec), frozen)
+
+
+def test_the_question_mode_is_part_of_a_runs_name_and_identity(tmp_path):
+    rich = RunSpec(7, {k: "rules" for k in ("rabbit", "deer", "wolf")}, "survival", 1)
+    basic = RunSpec(7, dict(rich.brains), "survival", 1, questions="basic")
+    assert rich.questions == "rich" and rich.id == "survival-rules-seed7"  # rich is the default and unmarked
+    assert basic.id == "survival-rules-basic-seed7"
+    assert [s.questions for s in plan_runs("survival", [7], brains=["rules"], questions="basic")] == ["basic"]
+    run_one(rich, str(tmp_path / "rich"))
+    assert run_complete(str(tmp_path / "rich"), rich) is True
+    assert run_complete(str(tmp_path / "rich"), basic) is False  # a rich run is not a basic run of the same seed
 
 
 def test_model_runs_need_confirmation_and_nothing_runs_without_it(tmp_path, monkeypatch):

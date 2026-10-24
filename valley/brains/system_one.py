@@ -28,6 +28,16 @@ INSTRUCTIONS = (
 )
 BATCH_SENTENCE = "Decide only for the creature with id '{id}', using creatures['{id}']."
 
+def question_id(creature_id: str | None, question) -> str:
+    """The id an extra question has in the request: `alert` alone, or `r4.alert` when several creatures share a request."""
+    local = question.key.replace(":", ".")
+    return local if creature_id is None else f"{creature_id}.{local}"
+
+
+def question_body(instructions: str, question) -> dict:
+    return {"type": question.type, "instructions": instructions, "criteria": question.criteria}
+
+
 ENDPOINT = "/v1/systemone"
 REQUEST_ID_HEADER = "x-typesafe-request-id"
 SINGLE_QUESTION_ID = "action"
@@ -176,6 +186,8 @@ class SystemOneBrain(Brain):
             state = request.view
             questions = {SINGLE_QUESTION_ID: {"type": "choice", "instructions": INSTRUCTIONS,
                                               "criteria": request.options}}
+            for question in request.questions:
+                questions[question_id(None, question)] = question_body(question.instructions, question)
         else:
             state = {"creatures": {r.creature_id: r.view for r in chunk}}
             questions = {
@@ -186,6 +198,10 @@ class SystemOneBrain(Brain):
                 }
                 for r in chunk
             }
+            for r in chunk:
+                for question in r.questions:
+                    sentence = BATCH_SENTENCE.format(id=r.creature_id)
+                    questions[question_id(r.creature_id, question)] = question_body(f"{question.instructions} {sentence}", question)
         return {"model": self.model, "state": state, "questions": questions}
 
     def _headers(self) -> dict:
@@ -274,6 +290,12 @@ class SystemOneBrain(Brain):
             decision, problem = self._to_decision(answer, request.options, latency_ms)
             if problem is not None:
                 return None, f"the answer for {request.creature_id} is unusable: {problem}"
+            for question in request.questions:
+                qid = question_id(None if single else request.creature_id, question)
+                value, problem = self._to_extra(answers.get(qid), question)
+                if problem is not None:
+                    return None, f"the {question.key!r} answer for {request.creature_id} is unusable: {problem}"
+                decision.extras[question.key] = value
             decisions.append(decision)
         return decisions, None
 
@@ -302,6 +324,20 @@ class SystemOneBrain(Brain):
         if isinstance(confidence, bool) or not isinstance(confidence, (int, float)):
             return None, "the confidence is missing or not a number"
         return Decision(choice, clean, min(1.0, max(0.0, float(confidence))), "model", latency_ms), None
+
+    @staticmethod
+    def _to_extra(answer, question):
+        """Accept a `score` inside its levels or a `noul` between 0 and 1. Returns (value, None) or (None, what was wrong)."""
+        if answer is None:
+            return None, "it is missing"
+        if not isinstance(answer, dict) or answer.get("type") != question.type:
+            return None, f"it is not a `{question.type}` answer"
+        value = answer.get(question.type if question.type == "noul" else "score")
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None, f"the {'noul' if question.type == 'noul' else 'score'} is missing or not a number"
+        if not -1e-6 <= value <= question.top + 1e-6:
+            return None, f"{value} is outside 0 to {question.top:g}"
+        return min(question.top, max(0.0, float(value))), None
 
     # -- bookkeeping ------------------------------------------------------
 

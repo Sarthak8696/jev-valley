@@ -49,6 +49,7 @@ class RunSpec:
     max_creatures: int = DEFAULT_MAX_CREATURES
     hesitate_below: float | None = None
     hesitation_label: str | None = None  # e.g. "h-p10"; defaults to "h{value}" when a threshold is set
+    questions: str = "rich"  # "rich" also asks the score and noul questions; "basic" asks only for the action
     batch: int = 16
     workers: int = 4
     timeout: float = 30
@@ -66,7 +67,8 @@ class RunSpec:
     def label(self) -> str:
         label = self.brain_label
         suffix = self.hesitation_label or (f"h{self.hesitate_below:g}" if self.hesitate_below is not None else None)
-        return f"{label}-{suffix}" if suffix else label
+        label = f"{label}-{suffix}" if suffix else label
+        return label if self.questions == "rich" else f"{label}-{self.questions}"
 
     @property
     def id(self) -> str:
@@ -120,7 +122,8 @@ def prepare_run(spec: RunSpec, out_dir: str | None):
             os.remove(log)  # a rerun must not append to an older log
     brains, instances = build_brains(spec, out_dir)
     sim = Simulation(spec.seed, brains, days=spec.days, width=spec.width, height=spec.height,
-                     max_creatures=spec.max_creatures, hesitate_below=spec.hesitate_below, tally=BlunderTally())
+                     max_creatures=spec.max_creatures, hesitate_below=spec.hesitate_below, tally=BlunderTally(),
+                     questions=spec.questions)
     return sim, instances
 
 
@@ -218,7 +221,7 @@ def run_dir(base_dir: str, spec: RunSpec) -> str:
 def survival_twin(spec: RunSpec) -> RunSpec:
     """The survival run with the same brain and seed, which is the same configuration as hesitation `off`."""
     return RunSpec(spec.seed, dict(spec.brains), "survival", spec.days, batch=spec.batch, workers=spec.workers,
-                   timeout=spec.timeout, max_creatures=spec.max_creatures)
+                   timeout=spec.timeout, max_creatures=spec.max_creatures, questions=spec.questions)
 
 
 def resolve_dir(base_dir: str, spec: RunSpec, reuse_survival: bool = True) -> tuple[str, str | None]:
@@ -231,7 +234,7 @@ def resolve_dir(base_dir: str, spec: RunSpec, reuse_survival: bool = True) -> tu
 
 
 def run_complete(directory: str, spec: RunSpec) -> bool:
-    """True if the folder holds a finished run of exactly this seed and hesitation setting."""
+    """True if the folder holds a finished run of exactly this seed, hesitation setting and question mode."""
     metrics_file = os.path.join(directory, "metrics.json")
     replay_file = os.path.join(directory, "replay.json")
     if not (os.path.exists(metrics_file) and os.path.exists(replay_file)):
@@ -239,7 +242,8 @@ def run_complete(directory: str, spec: RunSpec) -> bool:
     try:
         with open(metrics_file, encoding="utf-8") as handle:
             metrics = json.load(handle)
-        return metrics.get("seed") == spec.seed and metrics.get("hesitate_below") == spec.hesitate_below
+        return (metrics.get("seed") == spec.seed and metrics.get("hesitate_below") == spec.hesitate_below
+                and metrics.get("questions", "basic") == spec.questions)
     except (OSError, ValueError):
         return False
 

@@ -194,6 +194,7 @@ def compute_metrics(replay: dict, price_per_mtok: float | None = None) -> dict:
         "seed": meta["seed"],
         "brains": meta["brains"],
         "hesitate_below": meta["hesitate_below"],
+        "questions": meta.get("questions", "basic"),
         "survival": survival_metrics(replay),
         "hesitation": hesitation_metrics(replay),
         "blunders": blunder_metrics(tallies),
