@@ -270,6 +270,16 @@ def test_the_viewer_accepts_the_format_the_server_writes_and_the_older_one():
     assert '"jev-valley/replay@2"' in html and "FORMATS.includes(data.format)" in html
 
 
+def test_the_viewer_redraws_at_once_after_a_resize_and_judges_speed_against_the_displays_own_rate():
+    from pathlib import Path
+    html = (Path(__file__).resolve().parent.parent / "viewer" / "index.html").read_text(encoding="utf-8")
+    # a resize empties the canvas, so size() must draw again before the browser shows it (this was the white flash)
+    assert "if (this.ready) this.renderer.render(this.scene, this.camera);" in html
+    # the resolution only ever steps down, after two slow windows in a row, and relative to the display's frame time
+    assert "watchFrameRate(frameMs)" in html and "this.slowWindows >= 2" in html and "this.refresh * 1.7" in html
+    assert "avg < 13" not in html and "this.dpr + 0.1" not in html
+
+
 def test_the_viewer_reads_the_answers_from_the_eleventh_item_of_a_row_and_shows_them():
     from pathlib import Path
     html = (Path(__file__).resolve().parent.parent / "viewer" / "index.html").read_text(encoding="utf-8")

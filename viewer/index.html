@@ -1630,7 +1630,7 @@ class GL {
     this.hitMaterial = new THREE.MeshBasicMaterial({ visible: false });
     this.view = { x: 0, z: 0, yaw: Math.PI / 4, pitch: 0.72, dist: 45 };
     this.width = 40; this.height = 26;
-    this.frames = 0; this.frameMs = 0; this.lastRender = 0;
+    this.samples = []; this.slowWindows = 0; this.refresh = 1000 / 30; this.changedAt = 0; this.minDpr = 0.85; this.ready = false;
     this.size();
   }
 
@@ -1639,6 +1639,9 @@ class GL {
     this.renderer.setSize(rect.width, rect.height, false);
     this.aspect = rect.width / Math.max(1, rect.height);
     this.camera.aspect = this.aspect; this.camera.updateProjectionMatrix();
+    // Changing the size empties the canvas. Draw it again at once, before the browser shows it, or the page behind
+    // it flashes through for a frame.
+    if (this.ready) this.renderer.render(this.scene, this.camera);
   }
 
   /* A distance at which the whole valley fits in view. */
@@ -1709,14 +1712,14 @@ class GL {
 
   setLabel(name, species) {
     const canvas = document.createElement("canvas");
-    canvas.width = 256; canvas.height = 72;
+    canvas.width = 512; canvas.height = 144;
     const ctx = canvas.getContext("2d");
-    ctx.font = "600 30px system-ui, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.font = "600 60px system-ui, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
     const text = `${name} the ${species}`;
-    const w = Math.min(244, ctx.measureText(text).width + 28);
+    const w = Math.min(488, ctx.measureText(text).width + 56);
     ctx.fillStyle = "rgba(15,17,22,0.72)";
-    ctx.beginPath(); ctx.roundRect((256 - w) / 2, 10, w, 52, 26); ctx.fill();
-    ctx.fillStyle = "#fff"; ctx.fillText(text, 128, 37, 230);
+    ctx.beginPath(); (ctx.roundRect || ctx.rect).call(ctx, (512 - w) / 2, 20, w, 104, 52); ctx.fill();
+    ctx.fillStyle = "#fff"; ctx.fillText(text, 256, 74, 460);
     const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace;
     this.label.material.map?.dispose(); this.label.material.map = texture; this.label.material.needsUpdate = true;
   }
@@ -1855,14 +1858,28 @@ class GL {
 
   render(frameMs) {
     this.renderer.render(this.scene, this.camera);
-    // Keep the frame rate up on slow devices by lowering the resolution a step at a time, and give it back when there is room.
-    this.frames++; this.frameMs += frameMs;
-    if (this.frames >= 50) {
-      const avg = this.frameMs / this.frames;
-      this.frames = 0; this.frameMs = 0;
-      const next = avg > 26 ? this.dpr - 0.2 : avg < 13 && this.dpr < this.maxDpr ? this.dpr + 0.1 : this.dpr;
-      const clamped = clamp(next, 0.7, this.maxDpr);
-      if (Math.abs(clamped - this.dpr) > 0.01) { this.dpr = clamped; this.renderer.setPixelRatio(clamped); this.size(); }
+    this.ready = true;
+    this.watchFrameRate(frameMs);
+  }
+
+  /* Lower the resolution one step at a time when the machine cannot keep up, and never the other way, so it cannot flicker
+   * between two sizes. "Cannot keep up" is judged against this display's own frame time, from the median of a window of
+   * frames, and only when two windows in a row are slow: one hitch (a background tab, a busy moment) changes nothing. */
+  watchFrameRate(frameMs) {
+    if (document.hidden) { this.samples.length = 0; this.slowWindows = 0; return; }
+    this.samples.push(frameMs);
+    if (this.samples.length < 90) return;
+    const sorted = [...this.samples].sort((a, b) => a - b);
+    const median = sorted[45];
+    this.refresh = Math.max(6, Math.min(this.refresh, sorted[4]));  // the quickest frames show how fast this display can go
+    this.samples.length = 0;
+    this.slowWindows = median > this.refresh * 1.7 ? this.slowWindows + 1 : 0;
+    const now = performance.now();
+    if (this.slowWindows >= 2 && this.dpr > this.minDpr && now - this.changedAt > 4000) {
+      this.dpr = Math.max(this.minDpr, this.dpr - 0.25);
+      this.renderer.setPixelRatio(this.dpr);
+      this.size();
+      this.changedAt = now; this.slowWindows = 0;
     }
   }
 
