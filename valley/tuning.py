@@ -25,10 +25,11 @@ BOOM_BUST_DROP = 0.30
 
 
 def simulate_offline(brain_name: str, seed: int, days: int = 30,
-                     max_creatures: int = DEFAULT_MAX_CREATURES) -> dict:
+                     max_creatures: int = DEFAULT_MAX_CREATURES, questions: str = "rich") -> dict:
     """Run one offline brain for every species and return the population series."""
     brain = make_brain(brain_name, seed)
-    sim = Simulation(seed, {key: brain for key in SPECIES}, days=days, max_creatures=max_creatures)
+    sim = Simulation(seed, {key: brain for key in SPECIES}, days=days, max_creatures=max_creatures,
+                     questions=questions)
     sim.run()
     return {
         "brain": brain_name, "seed": seed, "days": days,
@@ -92,9 +93,9 @@ def _simulate_job(job):
 
 
 def run_check(seeds=BENCH_SEEDS, days: int = 30, max_creatures: int = DEFAULT_MAX_CREATURES,
-              jobs: int = 1) -> dict:
-    """Run `rules` and `random` on every seed and check the targets."""
-    tasks = [(name, seed, days, max_creatures) for name in ("rules", "random") for seed in seeds]
+              jobs: int = 1, questions: str = "rich") -> dict:
+    """Run `rules` and `random` on every seed and check the targets, in the given question mode."""
+    tasks = [(name, seed, days, max_creatures, questions) for name in ("rules", "random") for seed in seeds]
     if jobs > 1:
         with Pool(jobs) as pool:
             runs = pool.map(_simulate_job, tasks)

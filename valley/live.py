@@ -3,13 +3,20 @@
 The loop asks the brain for every animal's decision, carries out the hour, sends the
 frame, and never sends frames faster than one per `pace` seconds. If decisions take
 longer than that, the next frame goes out as soon as it is ready and the valley's
-clock slows down: decisions are never skipped or guessed. The server binds to
+clock slows down: decisions are never skipped or guessed.
+
+The valley never runs ahead of what the viewer is showing. The viewer reports where
+its playhead is and whether it is paused (POST /control). While it is paused, or
+more than LOOKAHEAD_HOURS ahead of the playhead, no new hour is started, so no
+decisions are asked for. The hour already in flight finishes. A viewer that never
+reports (a script reading the stream) is not held back. The server binds to
 127.0.0.1 only. When the month ends or every viewer has left, the run is saved as a
 normal replay with its `requests.jsonl`. If a model gives no usable answer the run stops, the
 viewer is told why, and nothing is saved except the request log.
 """
 
 import json
+import signal
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -21,8 +28,11 @@ from valley.replay import FORMAT, creature_record, replay_meta
 VIEWER_PATH = Path(__file__).resolve().parent.parent / "viewer" / "index.html"
 LIVE_TAG = '<meta name="valley-live" content="">'
 STREAM_PATH = "/stream"
-KEEPALIVE_SECONDS = 15
+KEEPALIVE_SECONDS = 2  # short, so that a viewer closed while the run is paused is noticed within seconds
 LOCAL_HOST = "127.0.0.1"
+CONTROL_PATH = "/control"
+LOOKAHEAD_HOURS = 3  # decisions run at most this many hours ahead of the viewer
+MAX_CONTROL_BYTES = 1024
 
 
 def viewer_page(path: Path = VIEWER_PATH) -> str:
@@ -51,6 +61,8 @@ class LiveServer:
         self._clients = 0
         self._had_client = False
         self._idle_since: float | None = None
+        self._paused = False  # the viewer paused: no new hour is started
+        self._playhead: float | None = None  # the hour the viewer is showing, once it has said
         self._viewer_seen = threading.Event()
         self._stop = threading.Event()
         self.finished = threading.Event()
@@ -116,6 +128,26 @@ class LiveServer:
             return (self._had_client and self._clients == 0 and idle is not None
                     and time.monotonic() - idle > self.disconnect_grace)
 
+    def _held(self) -> bool:
+        """True while the next hour must not be started: the viewer paused, or is too far behind."""
+        with self._cond:
+            if self._paused:
+                return True
+            return self._playhead is not None and self.sim.step_no - self._playhead >= LOOKAHEAD_HOURS
+
+    def set_control(self, paused: bool, playhead: float | None) -> None:
+        """What the viewer reports about its playback. Called from the HTTP thread."""
+        with self._cond:
+            self._paused = paused
+            if playhead is not None:
+                self._playhead = playhead
+            self._cond.notify_all()
+
+    @property
+    def paused(self) -> bool:
+        with self._cond:
+            return self._paused
+
     def _run_simulation(self) -> None:
         try:
             if self.wait_for_viewer:
@@ -125,6 +157,10 @@ class LiveServer:
             last_sent = None
             while (self.sim.step_no < self.sim.steps and any(c.alive for c in self.sim.living)
                    and not self._should_stop()):
+                while self._held() and not self._should_stop():
+                    self._stop.wait(0.05)  # nothing is asked of the model while the viewer is paused or far behind
+                if self._should_stop():
+                    break
                 started = time.monotonic()
                 frame = self.sim.step()
                 ready = time.monotonic()
@@ -185,6 +221,26 @@ class LiveServer:
                     self.end_headers()
                 else:
                     self.send_error(404)
+
+            def do_POST(self):
+                if self.path.split("?")[0] != CONTROL_PATH:
+                    self.send_error(404)
+                    return
+                try:
+                    length = int(self.headers.get("Content-Length", "0"))
+                    if not 0 < length <= MAX_CONTROL_BYTES:
+                        raise ValueError("bad length")
+                    body = json.loads(self.rfile.read(length))
+                    paused, playhead = body["paused"], body.get("playhead")
+                    if not isinstance(paused, bool) or (playhead is not None and (
+                            isinstance(playhead, bool) or not isinstance(playhead, (int, float)) or playhead < 0)):
+                        raise ValueError("bad fields")
+                except (ValueError, KeyError, TypeError):
+                    self.send_error(400)
+                    return
+                server.set_control(paused, None if playhead is None else float(playhead))
+                self.send_response(204)
+                self.end_headers()
 
         return Handler
 
@@ -260,6 +316,10 @@ class LiveServer:
         self.out(f"Jev Valley live at {self.url}")
         if self.wait_for_viewer:
             self.out("Waiting for a viewer to connect before the valley starts.")
+        try:  # a plain `kill` stops the run the same way Ctrl-C does: the hour in flight finishes, then it is saved
+            previous = signal.signal(signal.SIGTERM, signal.default_int_handler)
+        except ValueError:  # not the main thread
+            previous = None
         try:
             while not self.finished.wait(0.5):
                 pass
@@ -268,6 +328,8 @@ class LiveServer:
             self._stop.set()
             self.finished.wait(60)
         finally:
+            if previous is not None:
+                signal.signal(signal.SIGTERM, previous)
             self.close()
         if self.error:
             raise self.error

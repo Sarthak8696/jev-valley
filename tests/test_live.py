@@ -280,3 +280,132 @@ def test_closing_a_server_that_was_never_started_does_not_hang(tmp_path):
     started = time.time()
     server.close()
     assert time.time() - started < 5
+
+
+# -- the valley only runs as far as the viewer is showing -------------------------------------------
+
+def post_control(server, body, raw=False):
+    conn = http.client.HTTPConnection("127.0.0.1", server.port, timeout=10)
+    payload = body if raw else json.dumps(body)
+    conn.request("POST", "/control", body=payload, headers={"Content-Type": "application/json"})
+    status = conn.getresponse().status
+    conn.close()
+    return status
+
+
+def steady_step(server, seconds=0.6):
+    """The hour the valley has reached, once it has had time to move on if it was going to."""
+    time.sleep(seconds)
+    return server.sim.step_no
+
+
+def test_a_paused_valley_makes_no_decisions_and_carries_on_when_resumed(tmp_path, servers):
+    server = make_server(tmp_path, days=1)
+    servers.append(server)
+    server.set_control(True, 0.0)  # paused before any viewer has seen anything
+    conn, response = open_stream(server)
+    assert steady_step(server) == 0  # the stream is open, the valley is held
+    assert steady_step(server) == 0 and server.paused
+    server.set_control(False, 100.0)  # resumed, with the playhead far enough on that nothing holds the valley back
+    events = list(read_events(response))
+    assert [e for e, _ in events][-1] == "end" and server.sim.step_no == 24
+
+
+def test_a_valley_never_runs_more_than_the_look_ahead_in_front_of_the_viewer(tmp_path, servers):
+    from valley.live import LOOKAHEAD_HOURS
+    server = make_server(tmp_path, days=1)
+    servers.append(server)
+    server.set_control(False, 0.0)  # a viewer at hour 0 that is not moving
+    conn, response = open_stream(server)
+    assert steady_step(server) == LOOKAHEAD_HOURS
+    assert steady_step(server, 0.3) == LOOKAHEAD_HOURS  # and it stays there
+    server.set_control(False, 10.0)
+    assert steady_step(server) == 10 + LOOKAHEAD_HOURS
+    server.set_control(False, 100.0)
+    assert [e for e, _ in read_events(response)][-1] == "end"
+
+
+def test_a_viewer_that_never_reports_is_not_held_back(tmp_path, servers):
+    server = make_server(tmp_path, days=1)
+    servers.append(server)
+    conn, response = open_stream(server)
+    assert [e for e, _ in read_events(response)][-1] == "end" and server.sim.step_no == 24
+
+
+def test_the_viewer_can_pause_the_valley_over_http(tmp_path, servers):
+    server = make_server(tmp_path, days=1, pace=0.05)
+    servers.append(server)
+    conn, response = open_stream(server)
+    assert post_control(server, {"paused": True, "playhead": 1.0}) == 204
+    paused_at = steady_step(server)
+    assert paused_at < 24 and server.paused
+    assert steady_step(server) == paused_at  # still
+    assert post_control(server, {"paused": False, "playhead": 100.0}) == 204
+    assert [e for e, _ in read_events(response)][-1] == "end"
+
+
+@pytest.mark.parametrize("body", [
+    "not json", "{}", '{"paused": "yes"}', '{"paused": 1}', '{"paused": false, "playhead": -1}',
+    '{"paused": false, "playhead": "3"}', '{"paused": false, "playhead": true}', "[]", "",
+])
+def test_nonsense_control_messages_are_refused_and_change_nothing(tmp_path, servers, body):
+    server = make_server(tmp_path, days=1)
+    servers.append(server)
+    assert post_control(server, body, raw=True) == 400
+    assert server.paused is False and server._playhead is None
+    server.stop()
+
+
+def test_a_huge_control_message_is_refused(tmp_path, servers):
+    server = make_server(tmp_path, days=1)
+    servers.append(server)
+    assert post_control(server, json.dumps({"paused": True, "padding": "x" * 5000}), raw=True) == 400
+    assert server.paused is False
+    server.stop()
+
+
+def test_posting_anywhere_else_is_a_404(tmp_path, servers):
+    server = make_server(tmp_path, days=1)
+    servers.append(server)
+    conn = http.client.HTTPConnection("127.0.0.1", server.port, timeout=10)
+    conn.request("POST", "/stream", body="{}")
+    assert conn.getresponse().status == 404
+    conn.close()
+    server.stop()
+
+
+def test_closing_the_page_while_paused_still_ends_the_run(tmp_path, servers):
+    server = make_server(tmp_path, days=1, disconnect_grace=0.2)
+    servers.append(server)
+    server.set_control(True, 0.0)
+    conn, response = open_stream(server)
+    assert steady_step(server, 0.3) == 0
+    response.close()  # a browser closing the tab closes its socket; the response object holds it open otherwise
+    conn.close()  # the viewer leaves while the valley is held
+    assert server.finished.wait(15)  # noticed at the next keepalive, then the grace period
+    assert server.sim.step_no == 0 and server.error is None
+
+
+def test_a_plain_kill_stops_the_run_like_ctrl_c_and_saves_what_was_decided(tmp_path):
+    import signal
+    import subprocess
+    import sys
+    code = (
+        "from valley.bench import RunSpec\n"
+        "from valley.live import LiveServer\n"
+        "spec = RunSpec(seed=19, brains={'rabbit': 'rules', 'deer': 'rules', 'wolf': 'rules'}, experiment='live', days=30, log_requests=True)\n"
+        f"LiveServer(spec, {str(tmp_path / 'out')!r}, port=0, pace=0.02, wait_for_viewer=False).run()\n"
+    )
+    process = subprocess.Popen([sys.executable, "-u", "-c", code], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)  # -u: lines arrive as they are printed
+    try:
+        assert "Jev Valley live at" in process.stdout.readline()
+        time.sleep(1.0)  # let some hours be decided
+        process.send_signal(signal.SIGTERM)
+        out, err = process.communicate(timeout=60)
+    finally:
+        if process.poll() is None:
+            process.kill()
+    assert process.returncode == 0, err
+    assert "Stopping; saving what has been decided so far." in out and "saved " in out
+    saved = read_replay(str(tmp_path / "out" / "replay.json"))
+    assert 5 <= len(saved["frames"]) < 720

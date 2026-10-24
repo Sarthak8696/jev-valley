@@ -16,6 +16,16 @@ def _seed_list(text: str) -> list[int]:
     return [int(part) for part in text.split(",") if part.strip()]
 
 
+def _model_brain(text: str) -> str:
+    """`run` and `live` need a model. The offline baselines exist only to be compared with one, inside `bench` and `tune`."""
+    from valley.brains import BASELINE_BRAINS
+    if text in BASELINE_BRAINS:
+        raise argparse.ArgumentTypeError(
+            f"{text!r} is an offline comparison baseline, and the valley does not run without a model. "
+            "Use jev (the default) or system-one@URL#MODEL. The baselines run only inside `bench` and `tune`.")
+    return text
+
+
 def _size(text: str) -> tuple[int, int]:
     try:
         width, height = text.lower().split("x")
@@ -40,11 +50,11 @@ def _add_run_arguments(parser: argparse.ArgumentParser, log_default: bool) -> No
     parser.add_argument("--questions", choices=("rich", "basic"), default="rich",
                         help="rich (the default) also asks score and noul questions and the world reacts to the answers; "
                              "basic asks only which action to take")
-    parser.add_argument("--brain", default="jev",
-                        help="jev (the default, needs TYPESAFE_API_KEY), system-one@URL#MODEL, or the offline "
-                             "baselines rules and random")
-    parser.add_argument("--prey-brain", default=None, help="brain for rabbits and deer (default: --brain)")
-    parser.add_argument("--wolf-brain", default=None, help="brain for wolves (default: --brain)")
+    parser.add_argument("--brain", type=_model_brain, default="jev",
+                        help="jev (the default, needs TYPESAFE_API_KEY) or system-one@URL#MODEL. The valley does not "
+                             "run without a model")
+    parser.add_argument("--prey-brain", type=_model_brain, default=None, help="brain for rabbits and deer (default: --brain)")
+    parser.add_argument("--wolf-brain", type=_model_brain, default=None, help="brain for wolves (default: --brain)")
     parser.add_argument("--hesitate-below", type=float, default=None, metavar="CONFIDENCE",
                         help="freeze for the hour when the model's confidence is below this")
     _add_model_settings(parser)
@@ -118,6 +128,7 @@ def build_parser() -> argparse.ArgumentParser:
     tune.add_argument("-o", "--output", default=None, help="where to write the thresholds (default results/hesitation/thresholds.json)")
     tune.add_argument("--seeds", type=_seed_list, default=None, help="comma-separated seeds (default: the ten benchmark seeds)")
     tune.add_argument("--days", type=int, default=30)
+    tune.add_argument("--questions", choices=("rich", "basic"), default="rich", help="question mode to check (default rich)")
     tune.add_argument("--jobs", type=int, default=min(8, os.cpu_count() or 1), help="parallel processes")
     return parser
 
@@ -149,7 +160,7 @@ def _run(args) -> int:
             print(f"{brain}: {cost['requests']:,} requests, {cost['input_tokens']:,} input tokens, "
                   f"{cost['output_tokens']:,} output tokens{latency}")
         else:
-            print(f"{brain}: offline brain, no model was called and nothing was billed")
+            print(f"{brain}: no requests were made (every answer came from the response cache)")
     return 0
 
 
@@ -224,7 +235,7 @@ def _tune(args) -> int:
     if not args.check:
         print("nothing to do: pass --check, or --thresholds RUN_DIR [RUN_DIR ...]", file=sys.stderr)
         return 2
-    result = tuning.run_check(args.seeds or tuning.BENCH_SEEDS, args.days, jobs=args.jobs)
+    result = tuning.run_check(args.seeds or tuning.BENCH_SEEDS, args.days, jobs=args.jobs, questions=args.questions)
     print(tuning.format_report(result))
     return 0 if result["passed"] else 1
 

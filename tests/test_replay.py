@@ -154,9 +154,20 @@ def test_labels_and_run_ids():
 
 def test_the_run_command_writes_a_replay(tmp_path, capsys):
     out = tmp_path / "r"
-    assert cli.main(["run", "--brain", "rules", "--days", "2", "--out", str(out), "--quiet"]) == 0
-    assert (out / "replay.json").exists()
-    assert "run-rules-seed7" in capsys.readouterr().out
+    spec = RunSpec(seed=7, brains={s: "rules" for s in SPECIES}, days=2)
+    result = run_one(spec, str(out))  # the offline baseline is run through the benchmark's own path, not the CLI
+    assert (out / "replay.json").exists() and result["paths"]["replay"].endswith("replay.json")
+
+
+@pytest.mark.parametrize("command, flag", [("run", "--brain"), ("live", "--brain"), ("run", "--prey-brain"), ("live", "--wolf-brain")])
+@pytest.mark.parametrize("baseline", ["rules", "random"])
+def test_the_valley_does_not_run_without_a_model(command, flag, baseline, tmp_path, capsys):
+    with pytest.raises(SystemExit) as stop:
+        cli.main([command, flag, baseline, "--out", str(tmp_path / "x")])
+    assert stop.value.code == 2
+    message = capsys.readouterr().err
+    assert "does not run without a model" in message and "bench" in message
+    assert not (tmp_path / "x").exists()
 
 
 def test_the_run_command_reports_a_missing_key_without_a_traceback(tmp_path, monkeypatch, capsys):
@@ -233,17 +244,18 @@ def test_the_retry_setting_reaches_the_client(monkeypatch):
     assert instances[0].max_retries == 0
 
 
-def test_a_run_says_plainly_whether_a_model_was_called(tmp_path, capsys):
-    assert cli.main(["run", "--brain", "rules", "--days", "1", "--out", str(tmp_path / "r"), "--quiet"]) == 0
-    out = capsys.readouterr().out
-    assert "rules: offline brain, no model was called and nothing was billed" in out
-
-
 def test_the_viewer_marks_offline_baselines_and_explains_the_red_dashes():
     viewer = (Path(__file__).resolve().parent.parent / "viewer" / "index.html").read_text()
     assert "Offline baseline: no model is deciding" in viewer
     assert 'id="hunt-toggle"' in viewer and "Wolf hunting its target" in viewer
     assert "no API calls (offline brain)" in viewer and "model requests" in viewer
+
+
+def test_the_viewer_accepts_the_format_the_server_writes_and_the_older_one():
+    from pathlib import Path
+    html = (Path(__file__).resolve().parent.parent / "viewer" / "index.html").read_text(encoding="utf-8")
+    assert f'const FORMAT = "{FORMAT}";' in html
+    assert '"jev-valley/replay@2"' in html and "FORMATS.includes(data.format)" in html
 
 
 def test_an_older_replay_without_the_rich_answers_can_still_be_read(tmp_path):

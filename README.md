@@ -18,17 +18,15 @@ What you will see in the page:
 - A 40 × 26 valley in 3D: a stream with fords, ponds, woods, meadows with wild flowers, and wooded hills around it. The sun, moon and stars follow the clock, and grass goes bare where animals have grazed. Rabbits, deer and wolves walk, trot, hop, graze, lie down, hide, hunt and drink, and keep moving smoothly across the turn of every hour. Drag to look around, scroll or pinch to zoom, right-drag or two fingers to slide, Q and E to turn, 0 to see the whole valley again, F for full screen.
 - Click any animal to see its hunger and thirst, what it chose this hour, the probability the model gave to every action ("Why it chose this"), and its recent memories.
 - A status line that shows the pace and the real usage so far, for example `Live: 1.0 hours per second · 214 model requests, 85,310 input tokens`. If the model is slow, the valley's clock slows down and the badge pulses while it waits. Decisions are never skipped or guessed.
-- A warning chip, **Offline baseline: no model is deciding**, whenever the brain is the hand-written `rules` or `random` one. If you see that chip, nothing is being sent to Jev and nothing is billed.
+- A warning chip, **Offline baseline: no model is deciding**, on replays of the benchmark's hand-written `rules` and `random` baselines, which you can open from `results/`. Those are only comparison runs: the valley itself never runs without a model.
 - A red dashed line from a wolf that chose to hunt to its nearest target. A legend in the corner of the view explains it, and clicking the legend hides the lines.
 - A population chart and an event log. Playback is always one valley hour per second, with no fast-forward. The timeline slider appears once a live run has played to its end, so you cannot skip ahead of it; a finished replay has it from the start.
 
 A month is 720 valley hours, so a full run takes 12 minutes or more, and longer if the model is slow. Add `--days 2` for a short one. Closing the page stops the run and saves what was decided to `runs/live-jev-seed7/`. The valley does not start until a page is open, so no model calls are spent unseen.
 
-To try the viewer without a key, run live mode with the offline baseline. This is the hand-written `rules` brain, not a model, so it shows nothing about Jev, makes no API calls, and will show up as nothing in any Jev console:
+**The valley does not run without a model.** `run` and `live` accept only Jev (or another server that speaks the same request format), and stop at once if the key is missing or a call fails. The hand-written `rules` and `random` brains exist only inside `bench` and `tune`, as the baselines Jev is compared with.
 
-```bash
-python -m valley live --brain rules --seed 57 --open
-```
+**Pausing freezes the valley.** The page tells the server where its playhead is and whether it is paused. While it is paused, or more than three hours ahead of what is on screen, no new hour is started and nothing is asked of Jev; the hour already in flight finishes. Closing the page ends the run after a few seconds and saves what was decided.
 
 To watch a finished run afterwards, see [Run it](#run-it). There is no bundled demo: every run you watch is one you make.
 
@@ -120,7 +118,7 @@ python -m pytest                      # every test runs offline, with no API key
 python -m valley tune --check         # offline: checks the balance of the baseline brains
 ```
 
-Runs use a model, so they need a key. Every run ends by printing how many requests and tokens it used (and says so plainly if an offline brain was used), and the same numbers are in the run's `metrics.json`. Keys are read only from the environment and never written to a log:
+Runs use a model, so they need a key. Every run ends by printing how many requests and tokens it used, and the same numbers are in the run's `metrics.json`. Keys are read only from the environment and never written to a log:
 
 ```bash
 export TYPESAFE_API_KEY=...           # required for jev; also TYPESAFE_BASE_URL, TYPESAFE_MODEL

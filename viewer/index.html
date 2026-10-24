@@ -276,7 +276,8 @@ const ACTION_NAMES = {
 };
 const CAUSE_TEXT = { eaten: "Eaten", starved: "Starved", thirst: "Died of thirst" };
 const ROW = { id: 0, x: 1, y: 2, action: 3, conf: 4, hesitated: 5, energy: 6, hydration: 7, probs: 8, path: 9 };
-const FORMAT = "jev-valley/replay@2";
+const FORMAT = "jev-valley/replay@3";
+const FORMATS = [FORMAT, "jev-valley/replay@2"];  // @2 is the same without the rich mode's answers in each agent row
 
 /* The clock mirrors valley/clock.py. */
 function clockParts(step, startHour) {
@@ -1979,7 +1980,7 @@ function showDrop(message = "") {
   els.dropzone.hidden = false; els.dropError.textContent = message; els.tip.hidden = true;
 }
 function load(data, { live = false } = {}) {
-  if (!data || data.format !== FORMAT) throw new Error(`That file is not a Jev Valley replay (expected ${FORMAT}).`);
+  if (!data || !FORMATS.includes(data.format)) throw new Error(`That file is not a Jev Valley replay (expected ${FORMAT}).`);
   state.store = new Store(data);
   state.tracks = new Tracks(state.store);
   state.final = !live;
@@ -2022,6 +2023,8 @@ function togglePlay() {
   if (!state.store) return;
   if (state.ended && scrubbable()) { state.T = 0; state.ended = false; }
   state.playing = !state.playing; setPlayLabel();
+  reportPlayback();  // in live mode this stops or restarts the decisions at once
+  refreshLiveText();
 }
 const scrubbable = () => !state.live || state.done;
 function seek(T) {
@@ -2316,10 +2319,26 @@ function liveStatus(pace, calls) {
   return parts.join(" · ");
 }
 
+/* In live mode the valley only runs as far ahead as this page is showing: the page tells the server where its playhead
+   is and whether it is paused, and the server asks for no new decisions while paused or too far ahead. */
+let liveInfo = "", controlTimer = null;
+function reportPlayback() {
+  if (!state.live || state.final) return;
+  fetch("/control", { method: "POST", headers: { "Content-Type": "application/json" }, keepalive: true,
+    body: JSON.stringify({ paused: !state.playing, playhead: +state.T.toFixed(2) }) }).catch(() => {});
+}
+function refreshLiveText() {
+  if (!state.live) return;
+  els.liveText.textContent = state.playing || state.final ? liveInfo : "Paused: no decisions are being made";
+}
+
 function startLive(url) {
   state.live = { url };
+  clearInterval(controlTimer);
+  controlTimer = setInterval(reportPlayback, 400);
   els.liveBadge.classList.add("on");
-  els.liveText.textContent = "Live: waiting for the first hour";
+  liveInfo = "Live: waiting for the first hour";
+  els.liveText.textContent = liveInfo;
   els.dropzone.hidden = true;
   els.tip.hidden = true;
   const source = new EventSource(url);
@@ -2338,7 +2357,7 @@ function startLive(url) {
     const { pace, calls, new_creatures: newCreatures, notes, fates, ...rest } = frame;
     state.store.addFrame(rest, { newCreatures, notes, fates });
     state.tracks.update();
-    if (pace) els.liveText.textContent = liveStatus(pace, calls);
+    if (pace) { liveInfo = liveStatus(pace, calls); refreshLiveText(); }
     state.thinking = false;
     if (state.store.lastStep % 24 === 0) renderPopTable();
     lastPanelKey = "";
@@ -2346,6 +2365,7 @@ function startLive(url) {
   source.addEventListener("end", (e) => {
     const info = JSON.parse(e.data);
     els.liveBadge.classList.remove("thinking"); source.close();
+    clearInterval(controlTimer);
     state.final = true;  // nothing more is coming, so the last hour can be shown
     if (info.error) {
       els.liveText.textContent = "The run stopped";
@@ -2355,7 +2375,10 @@ function startLive(url) {
       els.liveText.textContent = "Live run finished and saved";
     }
   });
-  source.onerror = () => { els.liveText.textContent = "Live stream disconnected"; };
+  source.onerror = () => {
+    state.playing = false; setPlayLabel();  // nothing more is being decided, so everything stands still
+    els.liveText.textContent = "Live stream disconnected: the valley is frozen";
+  };
 }
 
 /* ---- main loop */
