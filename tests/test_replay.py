@@ -270,6 +270,13 @@ def test_the_viewer_accepts_the_format_the_server_writes_and_the_older_one():
     assert '"jev-valley/replay@2"' in html and "FORMATS.includes(data.format)" in html
 
 
+def test_the_viewer_reads_the_answers_from_the_eleventh_item_of_a_row_and_shows_them():
+    from pathlib import Path
+    html = (Path(__file__).resolve().parent.parent / "viewer" / "index.html").read_text(encoding="utf-8")
+    assert "path: 9, extras: 10" in html and "row[ROW.extras]" in html
+    assert "Its other answers" in html and "extrasPanel(store, row[ROW.extras])" in html
+
+
 def test_an_older_replay_without_the_rich_answers_can_still_be_read(tmp_path):
     sim, _ = finished_sim(days=1)
     replay = build_replay(sim, "old")

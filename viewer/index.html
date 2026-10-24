@@ -145,6 +145,8 @@
   .why .fill { background: var(--muted); }
   .why li.chosen .fill { background: var(--accent); }
   .why .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .why.extras li { grid-template-columns: 150px 1fr 52px; }
+  .why.extras .fill { background: var(--accent); }
   .sub { margin: 12px 0 4px; font-size: 12px; font-weight: 650; color: var(--ink-2); }
   .memories { margin: 0; padding-left: 18px; color: var(--ink-2); font-size: 13px; }
   .fate { margin-top: 10px; padding: 6px 10px; border-radius: 8px; background: var(--track); font-size: 13px; }
@@ -275,7 +277,7 @@ const ACTION_NAMES = {
   follow_group: "Stay with the group", explore: "Explore", hunt: "Hunt", scavenge: "Scavenge",
 };
 const CAUSE_TEXT = { eaten: "Eaten", starved: "Starved", thirst: "Died of thirst" };
-const ROW = { id: 0, x: 1, y: 2, action: 3, conf: 4, hesitated: 5, energy: 6, hydration: 7, probs: 8, path: 9 };
+const ROW = { id: 0, x: 1, y: 2, action: 3, conf: 4, hesitated: 5, energy: 6, hydration: 7, probs: 8, path: 9, extras: 10 };
 const FORMAT = "jev-valley/replay@3";
 const FORMATS = [FORMAT, "jev-valley/replay@2"];  // @2 is the same without the rich mode's answers in each agent row
 
@@ -469,7 +471,7 @@ function sceneAt(store, tracks, T) {
     animals.push({
       id, species: info.species, name: info.name, row, rowStep: actionStep,
       x: _pos.x, y: _pos.y, vx: _pos.vx, vy: _pos.vy, speed,
-      action: T < 1 && born === 0 ? null : row[ROW.action], hesitated: row[ROW.hesitated] === 1,
+      action: T < 1 && born === 0 ? null : row[ROW.action], hesitated: row[ROW.hesitated] === 1, extras: row[ROW.extras] || null,
       appear: smooth((T - born) / 0.6), fall: dying, size: lerp(0.62, 1, clamp(age / ADULT_HOURS[info.species], 0, 1)),
     });
   }
@@ -1179,6 +1181,7 @@ class AnimalRig {
     if (act === "seek_mate") { T.tail = 0.6; T.alert = 0.4; }
     if (this.species === "wolf" && act === "rest") T.down = 0.35;
     if (a.fall > 0) T.lie = 1;
+    if (a.extras && a.extras.alert !== undefined) T.alert = Math.max(T.alert, a.extras.alert / 4);  // what the model said about its own watchfulness
     T.lie *= 1 - moving; T.crouch *= 1 - 0.6 * moving; T.down *= 1 - 0.85 * moving;
     if (moving < 0.15 && act !== "eat" && act !== "drink" && act !== "rest") T.alert = Math.max(T.alert, 0.35 + 0.35 * Math.sin(t * 0.37 + this.seed));
     for (const key in T) p[key] += (T[key] - p[key]) * k(key === "lie" ? 3.2 : 5);
@@ -2109,6 +2112,7 @@ function renderMind(scene) {
         lines.push('<div class="sub">Why it chose this</div><ul class="why">' + names.map((n, i) =>
           `<li class="${n === action ? "chosen" : ""}"><span>${esc(ACTION_NAMES[n] || n)}</span><span class="track"><span class="fill" style="display:block;width:${probs[i]}%"></span></span><span class="num">${probs[i]}%</span></li>`).join("") + "</ul>");
       }
+      lines.push(extrasPanel(store, row[ROW.extras]));
     } else lines.push('<div class="chose">Just born. It decides for the first time next hour.</div>');
   }
   const mem = store.memories(id, stepNow);
@@ -2120,6 +2124,23 @@ function renderMind(scene) {
   els.mind.innerHTML = lines.join("");
   $("#follow").onclick = () => { state.follow = !state.follow; $("#follow").setAttribute("aria-pressed", String(state.follow)); };
   $("#clear-sel").onclick = () => select(null);
+}
+/* The rich mode's other answers: a score from 0 to 4, or the probability of yes. */
+const EXTRA_LABELS = {
+  alert: ["How alert it is", "score"], breed: ["A good time to have young", "yes"], attack: ["A wolf will try to catch it", "yes"],
+  effort: ["How hard it chases", "score"],
+};
+function extrasPanel(store, extras) {
+  if (!extras) return "";
+  const items = Object.entries(extras).map(([key, value]) => {
+    let label, kind;
+    if (key.startsWith("weak:")) { const prey = store.creatures[key.slice(5)]; label = `${prey ? prey.name + " the " + prey.species : "A prey animal"} looks weak`; kind = "score"; }
+    else [label, kind] = EXTRA_LABELS[key] || [key, "score"];
+    const pct = kind === "yes" ? Math.round(100 * value) : Math.round(25 * value);
+    const text = kind === "yes" ? `${pct}%` : `${value.toFixed(1)} / 4`;
+    return `<li><span>${esc(label)}</span><span class="track"><span class="fill" style="display:block;width:${pct}%"></span></span><span class="num wide">${text}</span></li>`;
+  });
+  return `<div class="sub">Its other answers</div><ul class="why extras">${items.join("")}</ul>`;
 }
 const meter = (label, pct, word) =>
   `<div class="meter"><span>${label}</span><span class="track"><span class="fill" style="display:block;width:${pct}%"></span></span><span class="word">${word}</span></div>`;
