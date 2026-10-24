@@ -821,17 +821,19 @@ Use `pytest`. Every test runs offline, in under 10 seconds in total, with no API
 
 ## 13. README outline
 
-Keep the README shorter than the code. Use these sections, in this order:
+Keep the README short enough to read in a few minutes; the detail lives in `docs/`. Use these sections, in this order:
 
-1. **Jev Valley:** one sentence, then a GIF of the 3D viewer and a link to the hosted viewer.
-2. **The question:** which brain keeps the valley alive for a month, and the hesitation twist, in three sentences.
-3. **Results:** the three charts and one table from `results/survival/summary.md` and `results/hesitation/summary.md`, with the seeds and lengths used.
-4. **How it works:** the "model decides what, code decides how" rule, one real example request and response, batching, waiting and fallbacks.
-5. **Run it:** install, a rules-brain run, how to point it at Jev or Laya, live mode, and how to reproduce the results.
-6. **Design decisions:** five or six short points: separate random streams, hourly steps with waiting, batching, fallbacks, the blunder rules, why the rules baseline is fair.
-7. **Limitations:** model answers vary between runs; the blunder rules are a simple, hand-written measure; results apply to this valley, not to the models in general.
-8. **How this was built:** a short statement that AI assistance was used, and what the author designed, decided and verified.
-9. **License:** MIT.
+1. **Jev Valley:** a short description, a GIF of the 3D viewer, and jump links.
+2. **Quick start:** install, set the key, watch a short live run, watch it again with `view`.
+3. **What you will see:** one screenshot and a few bullets.
+4. **Commands:** one table that says which command needs a key and which opens a window.
+5. **Troubleshooting:** the few failures people hit first, with a link to the full table.
+6. **The question:** which brain keeps the valley alive for a month, and the hesitation twist, in a few sentences.
+7. **Results so far:** the benchmark results from `results/survival/summary.md` and `results/hesitation/summary.md` once they exist, with the seeds and lengths used. Until then, a short summary of any runs read by hand, labelled as not coming from `bench`.
+8. **Limitations:** model answers vary between runs; the blunder rules are a simple, hand-written measure; results apply to this valley, not to the models in general.
+9. **Documentation:** a table of the pages in `docs/`: `running.md` (every command and option, cost, reproducing the benchmark, full troubleshooting), `viewer.md`, `how-it-works.md` (a real request and response, the extra questions, design decisions), `first-look.md`, `ecosystem.md` and this specification.
+10. **How this was built:** a short statement that AI assistance was used, and what the author designed, decided and verified.
+11. **License:** MIT.
 
 ---
 
@@ -978,6 +980,7 @@ Record every choice not covered above, and every change to a value in this docum
 | 2026-10-25 | The alertness effects were set to 6% of grazing and 5% of the catch chance per level. With the `rules` and `random` brains answering (then still present): all five balance targets passed on the ten benchmark seeds; on 100 unseen seeds all three species were alive on 96%, wolves were never alone, a rabbit boom and bust happened on 90%, and a species sat at its cap for over half the month on 11% (2% in the choice-only mode). | The larger first sizes (8% and 10%) let prey sit at their caps more often. The 11% shows the rich mode is a little less balanced than the choice-only one; it was not re-tuned further because the brains it was measured with were then removed. |
 | 2026-10-25 | The live valley never runs ahead of the viewer: the page POSTs its playhead and paused state to `/control`, and the server starts no new hour while paused or when more than 3 hours ahead of the playhead (the hour in flight finishes). A viewer that never reports is not held back. A termination signal stops a live run like Ctrl-C and saves it, and the stream keepalive is 2 seconds so a viewer closed during a pause is noticed. | The author: when the simulation is stopped, everything should freeze at once because no decisions are happening. Checked against the real API: 74 requests stayed 74 for 10 seconds while paused. |
 | 2026-10-25 | Checked against the live Jev API (jev-latest is jev-1.14.0): one-day valley runs of 95 and 94 requests had no errors and no retries, with a median of 360 and 421 ms. `choice`, `score` and `noul` answers have the shapes in the docs; a captured response is a test fixture. | First contact with the real API; the author supplied the key. The key is never written to a file. |
+| 2026-10-25 | The README is split. It keeps the quick start, the commands table, a short troubleshooting table, the question, results so far, limitations and how this was built; running, viewer, how-it-works, first-look and ecosystem moved to `docs/`. Until the benchmark has run against Jev, the README and `docs/first-look.md` carry a summary of three month-long runs (seeds 7, 11 and 21) that were read by hand, labelled as not coming from `bench`. | The README had grown to about 5,000 words, and the author wanted a front page that can be read in a few minutes. The hand-read numbers are an exception to decision 7 (numbers only from `bench`): they are real, but each place that shows them says how they were read, and the benchmark stays the source of results. |
 
 ## Phase 5 tuning record
 
