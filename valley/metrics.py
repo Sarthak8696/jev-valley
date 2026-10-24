@@ -5,6 +5,8 @@ blunder rules need signals that a replay does not store. `compute_metrics` turns
 a finished replay (with those tallies in its summary) into `metrics.json`.
 """
 
+import json
+
 from valley.clock import clock_text
 from valley.perception import hunger_word, thirst_word
 from valley.species import SPECIES_ORDER
@@ -47,24 +49,100 @@ def confidence_bin(confidence: float) -> int:
     return min(len(CALIBRATION_BINS) - 1, max(0, int(confidence * len(CALIBRATION_BINS))))
 
 
+# -- judgement: the extra score and noul answers, checked against what the simulation knows ------------
+
+THREAT_BUCKETS = ("none", "far", "mid", "near")  # how close the nearest visible wolf was when a prey animal answered
+
+
+def threat_bucket(distance) -> str:
+    return "none" if distance is None else "near" if distance <= 2 else "mid" if distance <= 4 else "far"
+
+
+def new_judgement() -> dict:
+    """The running sums behind the judgement metrics. They add up across runs, so a group can be pooled."""
+    return {
+        "attack": {"n": 0, "yes": 0, "brier": 0.0, "bins": [[0, 0, 0.0] for _ in CALIBRATION_BINS],  # per bin: n, attacked, sum p
+                   "by_threat": {bucket: [0, 0, 0.0] for bucket in THREAT_BUCKETS}},  # per threat bucket: n, attacked, sum p
+        "alert": {bucket: [0, 0.0] for bucket in THREAT_BUCKETS},  # per threat bucket: n, sum of alertness
+        "weak": {"n": 0, "abs": 0.0, "x": 0.0, "y": 0.0, "xx": 0.0, "yy": 0.0, "xy": 0.0},
+        "breed": {"able": [0, 0.0], "unable": [0, 0.0]},  # n, sum of P(yes), split by whether it really could breed
+    }
+
+
+def add_judgement(total: dict, other: dict) -> dict:
+    """Add `other`'s sums into `total` and return it."""
+    for key in ("n", "yes", "brier"):
+        total["attack"][key] += other["attack"][key]
+    for mine, theirs in zip(total["attack"]["bins"], other["attack"]["bins"]):
+        for i in range(3):
+            mine[i] += theirs[i]
+    for bucket in THREAT_BUCKETS:
+        for i in range(3):
+            total["attack"]["by_threat"][bucket][i] += other["attack"]["by_threat"][bucket][i]
+    for bucket in THREAT_BUCKETS:
+        for i in range(2):
+            total["alert"][bucket][i] += other["alert"][bucket][i]
+    for key in total["weak"]:
+        total["weak"][key] += other["weak"][key]
+    for key in ("able", "unable"):
+        for i in range(2):
+            total["breed"][key][i] += other["breed"][key][i]
+    return total
+
+
+def derive_judgement(raw: dict) -> dict:
+    """Readable numbers from the sums: Brier score and calibration, alertness by threat, weakness error, breeding."""
+    a = raw["attack"]
+    base = a["yes"] / a["n"] if a["n"] else None
+    brier = a["brier"] / a["n"] if a["n"] else None
+    reference = base * (1 - base) if base is not None else None
+    attack = {
+        "n": a["n"], "base_rate": base, "brier": brier, "brier_reference": reference,
+        "brier_skill": 1 - brier / reference if brier is not None and reference else None,
+        "calibration": [{"bin": label, "n": n, "mean_predicted": s / n if n else None, "observed_rate": yes / n if n else None}
+                        for label, (n, yes, s) in zip(CALIBRATION_BINS, a["bins"])],
+        "by_threat": {bucket: {"n": n, "mean_predicted": s / n if n else None, "observed_rate": yes / n if n else None}
+                      for bucket, (n, yes, s) in a["by_threat"].items()},
+    }
+    means = {b: (raw["alert"][b][1] / raw["alert"][b][0] if raw["alert"][b][0] else None) for b in THREAT_BUCKETS}
+    alert = {"mean_by_threat": means, "n_by_threat": {b: raw["alert"][b][0] for b in THREAT_BUCKETS},
+             "response": means["near"] - means["none"] if means["near"] is not None and means["none"] is not None else None}
+    w = raw["weak"]
+    n = w["n"]
+    correlation = None
+    if n > 1:
+        cov, vx, vy = w["xy"] - w["x"] * w["y"] / n, w["xx"] - w["x"] ** 2 / n, w["yy"] - w["y"] ** 2 / n
+        correlation = cov / (vx * vy) ** 0.5 if vx > 1e-12 and vy > 1e-12 else None
+    weak = {"n": n, "mae": w["abs"] / n if n else None, "correlation": correlation}
+    b = raw["breed"]
+    breed = {"n_able": b["able"][0], "n_unable": b["unable"][0],
+             "mean_yes_when_able": b["able"][1] / b["able"][0] if b["able"][0] else None,
+             "mean_yes_when_unable": b["unable"][1] / b["unable"][0] if b["unable"][0] else None}
+    return {"attack": attack, "alert": alert, "weak": weak, "breed": breed}
+
+
 class BlunderTally:
     """Counts decisions, blunder opportunities and blunders per brain while a run happens."""
 
     def __init__(self):
         self.brains: dict[str, dict] = {}
+        self._pending: dict[str, tuple] = {}  # creature id -> (brain, P(attack)) until the hour has been played
 
     def _stats(self, brain: str) -> dict:
         if brain not in self.brains:
             self.brains[brain] = {
+                "judgement": new_judgement(),
                 "decisions": 0,
                 "rules": {rule: [0, 0] for rule in BLUNDER_RULES},  # rule -> [opportunities, blunders]
                 "calibration": [[0, 0] for _ in CALIBRATION_BINS],  # bin -> [decisions with an opportunity, with a blunder]
             }
         return self.brains[brain]
 
-    def record(self, brain: str, species: str, signals: dict, decision) -> None:
+    def record(self, brain: str, species: str, signals: dict, decision, request=None) -> None:
         stats = self._stats(brain)
         stats["decisions"] += 1
+        if request is not None and decision.extras:
+            self._record_extras(stats["judgement"], brain, signals, decision, request)
         checks = blunder_check(signals, decision.choice)
         for rule, blundered in checks:
             stats["rules"][rule][0] += 1
@@ -74,9 +152,55 @@ class BlunderTally:
             cell[0] += 1
             cell[1] += int(any(blundered for _, blundered in checks))
 
+    def _record_extras(self, judgement: dict, brain: str, signals: dict, decision, request) -> None:
+        """Score what can be scored at once; the attack answer waits for the hour to be played."""
+        extras = decision.extras
+        if "alert" in extras:
+            cell = judgement["alert"][threat_bucket(signals["threat_dist"])]
+            cell[0] += 1
+            cell[1] += extras["alert"]
+        if "breed" in extras:
+            cell = judgement["breed"]["able" if signals["can_mate"] else "unable"]
+            cell[0] += 1
+            cell[1] += extras["breed"]
+        if "attack" in extras:
+            self._pending[request.creature_id] = (brain, extras["attack"], threat_bucket(signals["threat_dist"]))
+        for key, value in extras.items():
+            if key.startswith("weak:") and key[5:] in request.truth.get("weak", {}):
+                truth = 4.0 * (1.0 - request.truth["weak"][key[5:]])  # a prey animal at full energy is a 0, at none a 4
+                w = judgement["weak"]
+                w["n"] += 1
+                w["abs"] += abs(value - truth)
+                w["x"] += value
+                w["y"] += truth
+                w["xx"] += value * value
+                w["yy"] += truth * truth
+                w["xy"] += value * truth
+
+    def resolve_attacks(self, outcomes) -> None:
+        """`outcomes` is (creature id, whether a wolf tried to catch it) for everyone who answered this hour."""
+        for creature_id, attacked in outcomes:
+            pending = self._pending.pop(creature_id, None)
+            if pending is None:
+                continue
+            brain, p, bucket = pending
+            a = self.brains[brain]["judgement"]["attack"]
+            cell = a["by_threat"][bucket]
+            cell[0] += 1
+            cell[1] += int(attacked)
+            cell[2] += p
+            a["n"] += 1
+            a["yes"] += int(attacked)
+            a["brier"] += (p - int(attacked)) ** 2
+            cell = a["bins"][confidence_bin(p)]
+            cell[0] += 1
+            cell[1] += int(attacked)
+            cell[2] += p
+
     def to_dict(self) -> dict:
         return {name: {**stats, "rules": {k: list(v) for k, v in stats["rules"].items()},
-                       "calibration": [list(c) for c in stats["calibration"]]}
+                       "calibration": [list(c) for c in stats["calibration"]],
+                       "judgement": json.loads(json.dumps(stats["judgement"]))}
                 for name, stats in self.brains.items()}
 
 
@@ -152,6 +276,17 @@ def calibration_metrics(tallies: dict) -> dict:
     return out
 
 
+def judgement_metrics(tallies: dict) -> dict:
+    """Per brain: the raw sums (so that runs can be pooled) and the numbers derived from them. Only brains that were asked."""
+    out = {}
+    for brain, stats in tallies.items():
+        raw = stats.get("judgement")
+        if raw and (raw["attack"]["n"] or raw["weak"]["n"] or any(c[0] for c in raw["alert"].values())
+                    or raw["breed"]["able"][0] or raw["breed"]["unable"][0]):
+            out[brain] = {"raw": raw, **derive_judgement(raw)}
+    return out
+
+
 def percentile(values: list[float], q: float):
     if not values:
         return None
@@ -199,5 +334,6 @@ def compute_metrics(replay: dict, price_per_mtok: float | None = None) -> dict:
         "hesitation": hesitation_metrics(replay),
         "blunders": blunder_metrics(tallies),
         "calibration": calibration_metrics(tallies),
+        "judgement": judgement_metrics(tallies),
         "cost": cost,
     }

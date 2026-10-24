@@ -11,7 +11,9 @@ from valley import __version__
 from valley.clock import START_HOUR
 from valley.species import SPECIES, SPECIES_ORDER
 
-FORMAT = "jev-valley/replay@2"
+FORMAT = "jev-valley/replay@3"
+# @2 replays are the same without the rich mode's answers, which @3 adds as an optional eleventh item of each agent row.
+ACCEPTED_FORMATS = (FORMAT, "jev-valley/replay@2")
 MAX_REPLAY_BYTES = 3 * 1024 * 1024
 
 
@@ -77,7 +79,7 @@ def read_replay(path: str) -> dict:
 
 
 def check_format(replay: dict) -> None:
-    if not isinstance(replay, dict) or replay.get("format") != FORMAT:
+    if not isinstance(replay, dict) or replay.get("format") not in ACCEPTED_FORMATS:
         found = replay.get("format") if isinstance(replay, dict) else type(replay).__name__
         raise ValueError(f"not a {FORMAT} replay (found {found!r})")
 

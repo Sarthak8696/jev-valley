@@ -36,7 +36,7 @@ def test_a_replay_round_trips_through_write_and_read(tmp_path):
 def test_the_document_has_the_documented_shape():
     sim, _ = finished_sim()
     replay = build_replay(sim, "test-rules-seed7")
-    assert replay["format"] == FORMAT == "jev-valley/replay@2"
+    assert replay["format"] == FORMAT == "jev-valley/replay@3"
     meta = replay["meta"]
     for key in ("run_id", "seed", "map_retries", "steps", "start_hour", "width", "height", "tiles", "brains",
                 "hesitate_below", "actions", "version"):
@@ -111,7 +111,7 @@ def test_events_use_the_documented_sentences():
 def test_a_wrong_format_is_rejected(tmp_path):
     path = tmp_path / "bad.json"
     path.write_text(json.dumps({"format": "something/else"}))
-    with pytest.raises(ValueError, match="replay@2"):
+    with pytest.raises(ValueError, match="replay@3"):
         read_replay(str(path))
     with pytest.raises(ValueError):
         check_format([])
@@ -184,7 +184,7 @@ def test_the_view_command_embeds_a_replay(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(cli, "VIEWER_PATH", viewer)
     out = tmp_path / "valley.html"
     assert cli.main(["view", str(replay_path), "-o", str(out)]) == 0
-    assert '"format":"jev-valley/replay@2"' in out.read_text()
+    assert '"format":"jev-valley/replay@3"' in out.read_text()
 
 
 def test_creatures_carry_the_age_they_had_when_they_entered_the_valley():
@@ -244,3 +244,41 @@ def test_the_viewer_marks_offline_baselines_and_explains_the_red_dashes():
     assert "Offline baseline: no model is deciding" in viewer
     assert 'id="hunt-toggle"' in viewer and "Wolf hunting its target" in viewer
     assert "no API calls (offline brain)" in viewer and "model requests" in viewer
+
+
+def test_an_older_replay_without_the_rich_answers_can_still_be_read(tmp_path):
+    sim, _ = finished_sim(days=1)
+    replay = build_replay(sim, "old")
+    replay["format"] = "jev-valley/replay@2"
+    path = tmp_path / "old.json"
+    path.write_text(dumps(replay))
+    assert read_replay(str(path))["format"] == "jev-valley/replay@2"
+
+
+def rows_of(sim):
+    return [row for frame in sim.frames for row in frame["agents"] if row[3] is not None]
+
+
+def test_rich_rows_carry_the_answers_as_an_eleventh_item_and_basic_rows_do_not():
+    basic, _ = finished_sim(days=2)
+    assert {len(row) for row in rows_of(basic)} == {10}
+    assert build_replay(basic, "b")["meta"]["questions"] == "basic"
+    b = make_brain("rules", 7)
+    rich = Simulation(7, {s: b for s in SPECIES}, days=2, questions="rich")
+    rich.run()
+    rows = rows_of(rich)
+    assert {len(row) for row in rows} == {11}
+    assert all(isinstance(row[10], dict) and row[10] for row in rows)
+    assert build_replay(rich, "r")["meta"]["questions"] == "rich"
+    prey = next(row for row in rows if row[0].startswith("r"))
+    assert set(prey[10]) == {"alert", "breed", "attack"}
+    wolf = next(row for row in rows if row[0].startswith("w"))
+    assert {"effort", "breed"} <= set(wolf[10]) and all(k in ("effort", "breed") or k.startswith("weak:") for k in wolf[10])
+
+
+def test_a_newborn_has_no_answers_until_its_first_decision():
+    b = make_brain("rules", 7)
+    sim = Simulation(7, {s: b for s in SPECIES}, days=10, questions="rich")
+    sim.run()
+    newborn_rows = [row for frame in sim.frames for row in frame["agents"] if row[3] is None]
+    assert newborn_rows and all(len(row) == 10 for row in newborn_rows)

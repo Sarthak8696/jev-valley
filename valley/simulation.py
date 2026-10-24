@@ -175,6 +175,8 @@ class Simulation:
             if creature.alive:
                 actions.execute(self, creature)
 
+        if self.tally is not None:
+            self.tally.resolve_attacks([(c.id, c.attacked) for c in participants])
         for creature in participants:
             if creature.alive:
                 creature.age += 1
@@ -210,7 +212,7 @@ class Simulation:
                 creature.action = decision.choice
                 creature.executed = decision.choice
                 if self.tally is not None:
-                    self.tally.record(brain.name, creature.species, request.signals, decision)
+                    self.tally.record(brain.name, creature.species, request.signals, decision, request)
                 if self.hesitate_below is not None and decision.confidence < self.hesitate_below:
                     creature.executed = "rest"
                     creature.hesitated = True
@@ -250,12 +252,15 @@ class Simulation:
             action = creature.action
         else:
             action, confidence, probabilities = None, -1, []
-        return [
+        row = [
             creature.id, creature.x, creature.y, action, confidence, int(creature.hesitated),
             max(0, round(100 * creature.energy / spec.max_energy)),
             max(0, round(100 * creature.hydration / spec.max_hydration)),
             probabilities, [list(tile) for tile in creature.path],
         ]
+        if decided and decision.extras:  # the rich mode's answers: a score, or the probability of yes
+            row.append({key: round(value, 3) for key, value in decision.extras.items()})
+        return row
 
     def _frame(self) -> dict:
         t = self.step_no

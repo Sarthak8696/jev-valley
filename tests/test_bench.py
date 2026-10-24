@@ -155,6 +155,18 @@ def test_run_complete_checks_seed_and_threshold(tmp_path):
     assert not run_complete(run_dir(str(tmp_path), spec), frozen)
 
 
+def test_a_rich_bench_summary_scores_the_judgements_and_a_basic_one_has_no_such_section(tmp_path):
+    run("survival", tmp_path / "rich", brains=["rules", "random"], seeds=[3])
+    summary = (tmp_path / "rich" / "survival" / "summary.md").read_text()
+    assert "## Judgement" in summary and "Will a wolf try to catch me this hour?" in summary and "Weakness error" in summary
+    data = json.loads((tmp_path / "rich" / "survival" / "summary.json").read_text())
+    rules = data["groups"]["rules"]["judgement"]["rules"]
+    random_ = data["groups"]["random"]["judgement"]["random"]
+    assert rules["weak"]["mae"] < random_["weak"]["mae"] and rules["alert"]["response"] > random_["alert"]["response"]
+    run("survival", tmp_path / "basic", brains=["rules"], seeds=[3], questions="basic")
+    assert "## Judgement" not in (tmp_path / "basic" / "survival" / "summary.md").read_text()
+
+
 def test_the_question_mode_is_part_of_a_runs_name_and_identity(tmp_path):
     rich = RunSpec(7, {k: "rules" for k in ("rabbit", "deer", "wolf")}, "survival", 1)
     basic = RunSpec(7, dict(rich.brains), "survival", 1, questions="basic")

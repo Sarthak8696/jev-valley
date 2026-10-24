@@ -17,7 +17,9 @@ from dataclasses import dataclass, field
 
 from valley import charts
 from valley.brains import MODEL_BRAINS, make_brain
-from valley.metrics import BlunderTally, CALIBRATION_BINS, compute_metrics
+from valley.metrics import (
+    BlunderTally, CALIBRATION_BINS, add_judgement, compute_metrics, derive_judgement, new_judgement,
+)
 from valley.replay import build_replay, write_replay
 from valley.simulation import Simulation
 from valley.species import SPECIES, SPECIES_ORDER
@@ -380,6 +382,10 @@ def aggregate_group(runs: list[dict]) -> dict:
                 cell[0] += row["decisions_with_opportunity"]
                 if row["blunder_rate"] is not None:
                     cell[1] += row["blunder_rate"] * row["decisions_with_opportunity"]
+    judgement: dict[str, dict] = {}
+    for m in metrics:
+        for brain, j in m.get("judgement", {}).items():
+            add_judgement(judgement.setdefault(brain, new_judgement()), j["raw"])  # pooled, not an average of ratios
     cost: dict[str, dict] = {}
     for m in metrics:
         for brain, c in m["cost"].items():
@@ -420,6 +426,7 @@ def aggregate_group(runs: list[dict]) -> dict:
                                  "blunder_rate": cell[1] / cell[0] if cell[0] else None}
                                 for label, cell in zip(CALIBRATION_BINS, cells)]
                         for brain, cells in calibration.items()},
+        "judgement": {brain: derive_judgement(raw) for brain, raw in judgement.items()},
         "hesitation_threshold": next(iter(thresholds)) if len(thresholds) == 1 else None,
         "hesitation_rate": _mean(m["hesitation"]["rate"] for m in metrics if m["hesitate_below"] is not None),
         "cost": cost_out,
@@ -538,6 +545,38 @@ def render_markdown(summary: dict) -> str:
                 row += [f"{cell['decisions_with_opportunity']:,}", _pct(cell["blunder_rate"])]
             rows.append(row)
         parts += [_table(headers, rows), ""]
+
+    judged = {name: a for name, a in groups.items() if a.get("judgement")}
+    if judged:
+        parts += ["## Judgement", "",
+                  "Besides the action, each animal is asked score and yes/no questions, and the answers are checked against "
+                  "what the simulation knows. Pooled over all runs of a group.", ""]
+        rows = []
+        for name, a in judged.items():
+            for brain, j in a["judgement"].items():
+                t = j["attack"]["by_threat"]
+                rows.append([name, brain, f"{j['attack']['n']:,}", _pct(j["attack"]["base_rate"]), _num(j["attack"]["brier"], 3),
+                             _num(j["attack"]["brier_skill"], 2),
+                             f"{_pct(t['none']['mean_predicted'], 0)} / {_pct(t['none']['observed_rate'], 1)}",
+                             f"{_pct(t['near']['mean_predicted'], 0)} / {_pct(t['near']['observed_rate'], 0)}"])
+        parts += ["**Will a wolf try to catch me this hour?** A yes/no answer for prey, scored with the Brier score (lower is "
+                  "better) and against always answering the base rate (skill above 0 beats that). The last two columns give "
+                  "the average answer next to what really happened, with no wolf in sight and with one within 2 tiles.", "",
+                  _table(["Group", "Brain", "Answers", "Base rate", "Brier", "Skill", "No wolf: said / happened",
+                          "Wolf near: said / happened"], rows), ""]
+        rows = []
+        for name, a in judged.items():
+            for brain, j in a["judgement"].items():
+                m = j["alert"]["mean_by_threat"]
+                rows.append([name, brain, _num(m["none"], 2), _num(m["far"], 2), _num(m["mid"], 2), _num(m["near"], 2),
+                             _num(j["weak"]["mae"], 2), _num(j["weak"]["correlation"], 2),
+                             f"{_pct(j['breed']['mean_yes_when_able'], 0)} / {_pct(j['breed']['mean_yes_when_unable'], 0)}"])
+        parts += ["**Reading the scene.** Alertness (0 to 4) for prey by how close the nearest wolf was: a brain that reads "
+                  "danger answers higher as the wolf gets closer. The weakness score a wolf gives prey (0 to 4) is checked "
+                  "against the prey's real energy: mean error and correlation. The last column is the average chance of "
+                  "yes to \"is now a good time to have young\" when the animal could and when it could not.", "",
+                  _table(["Group", "Brain", "Alert: no wolf", "far", "mid", "near", "Weakness error", "Weakness r",
+                          "Breed yes: able / unable"], rows), ""]
 
     cost_rows = []
     for name, a in groups.items():
