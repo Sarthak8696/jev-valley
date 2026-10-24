@@ -11,6 +11,10 @@ dist/
 runs/
 .valley-cache/
 
+# The raw request logs of a benchmark are about 130 MB per month-run. They stay on disk next to each run so the
+# numbers can be traced, but they are not committed.
+results/**/requests.jsonl
+
 # Secrets must never be committed.
 .env
 .env.*
