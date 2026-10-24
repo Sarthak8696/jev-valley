@@ -12,6 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from valley import actions
 from valley.creatures import HESITATED, Creature
 from valley.perception import build_request
+from valley.questions import MODES
 from valley.species import ID_PREFIX, PERSONALITIES, SPECIES, SPECIES_ORDER, plural, species_cap
 from valley.world import (
     DEFAULT_HEIGHT, DEFAULT_MAX_CREATURES, DEFAULT_WIDTH, DIRECTIONS, World, derive_seed,
@@ -28,7 +29,10 @@ class Simulation:
     def __init__(self, seed: int, brains: dict, days: int = 30, width: int = DEFAULT_WIDTH,
                  height: int = DEFAULT_HEIGHT, max_creatures: int = DEFAULT_MAX_CREATURES,
                  hesitate_below: float | None = None, tally=None, world: World | None = None,
-                 creatures: list[Creature] | None = None):
+                 creatures: list[Creature] | None = None, questions: str = "basic"):
+        if questions not in MODES:
+            raise ValueError(f"questions must be one of {', '.join(MODES)}, not {questions!r}")
+        self.rich = questions == "rich"  # also ask the score and noul questions of valley/questions.py
         self.seed = seed
         self.brains = brains  # species key -> Brain; species may share one instance
         self.steps = days * HOURS_PER_DAY
@@ -162,6 +166,7 @@ class Simulation:
         for creature in participants:
             creature.path = []
             creature.hesitated = False
+            creature.attacked = False
         self._decide(participants)
 
         order = list(participants)
@@ -185,7 +190,7 @@ class Simulation:
     def _decide(self, participants: list[Creature]) -> None:
         groups: dict[int, tuple] = {}
         for creature in participants:
-            request = build_request(self.world, creature, self.living)
+            request = build_request(self.world, creature, self.living, self.rich)
             brain = self.brains[creature.species]
             groups.setdefault(id(brain), (brain, []))[1].append((creature, request))
 
@@ -201,6 +206,7 @@ class Simulation:
         for (brain, items), decisions in zip(batches, results):
             for (creature, request), decision in zip(items, decisions):
                 creature.decision = decision
+                creature.take_answers(decision.extras)
                 creature.action = decision.choice
                 creature.executed = decision.choice
                 if self.tally is not None:

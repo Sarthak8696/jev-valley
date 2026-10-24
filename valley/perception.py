@@ -6,6 +6,7 @@ brain and for the blunder metric.
 """
 
 from valley.brains.base import DecisionRequest
+from valley.questions import prey_questions, wolf_questions
 from valley.species import PREY_SPECIES, WOLF, action_menu, plural
 from valley.world import FOREST, WATER, chebyshev
 
@@ -55,6 +56,25 @@ def where(ox: int, oy: int, tx: int, ty: int) -> str:
         return "right here"
     unit = "tile" if distance == 1 else "tiles"
     return f"{distance} {unit} {direction(tx - ox, ty - oy)}"
+
+
+CONDITION_WORDS = ("looks well", "looks tired", "looks weak")
+
+
+def condition(energy_ratio: float) -> int:
+    """How worn an animal looks from outside: 0 well, 1 tired, 2 weak. Coarser than its real energy."""
+    return 0 if energy_ratio >= 0.6 else 1 if energy_ratio >= 0.3 else 2
+
+
+def prey_cues(prey: list, living) -> list[dict]:
+    """What a wolf can see of each of up to three prey animals: how far, how worn, whether young, whether alone."""
+    cues = []
+    for animal in prey[:3]:
+        company = any(o is not animal and o.alive and o.species == animal.species
+                      and chebyshev(o.x, o.y, animal.x, animal.y) <= 3 for o in living)
+        cues.append({"id": animal.id, "cond": condition(animal.energy_ratio), "young": not animal.is_adult,
+                     "alone": not company})
+    return cues
 
 
 def is_hidden(world, creature) -> bool:
@@ -120,8 +140,11 @@ def _can_have_young(creature) -> str:
     return "yes"
 
 
-def build_request(world, creature, living) -> DecisionRequest:
+def build_request(world, creature, living, rich: bool = False) -> DecisionRequest:
     """Build the view and signals for one creature from the world as it is now.
+
+    With `rich`, the request also carries the extra score and noul questions (valley/questions.py), and a wolf's
+    view says how each prey animal looks, so that it has something to judge.
 
     Side effect: if the creature can see water, it remembers the nearest water tile.
     """
@@ -145,6 +168,7 @@ def build_request(world, creature, living) -> DecisionRequest:
     plants = None if predator else world.nearest_plants(x, y, vision)
     carcass = nearest_carcass(world, creature)
 
+    cues = prey_cues(prey, living) if predator else []
     sees = []
     if not predator:
         for wolf in wolves[:2]:
@@ -153,8 +177,10 @@ def build_request(world, creature, living) -> DecisionRequest:
                 text += ", hunting"
             sees.append(text)
     else:
-        for animal in prey[:3]:
+        for animal, cue in zip(prey[:3], cues):
             text = f"prey: {animal.species} {animal.name}, {where(x, y, animal.x, animal.y)}"
+            if rich:
+                text += (", young" if cue["young"] else "") + (", alone" if cue["alone"] else "") + ", " + CONDITION_WORDS[cue["cond"]]
             if is_hidden(world, animal):
                 text += " (hiding in forest)"
             sees.append(text)
@@ -208,5 +234,11 @@ def build_request(world, creature, living) -> DecisionRequest:
         "water_adjacent": world.next_to_water(x, y),
         "food_here": (not predator) and world.plants(x, y) > 0,
         "can_mate": can_mate,
+        "prey_cues": cues,
     }
-    return DecisionRequest(creature.id, view, action_menu(creature.species), signals)
+    questions, truth = [], {}
+    if rich:
+        questions = wolf_questions(prey) if predator else prey_questions()
+        if predator:
+            truth["weak"] = {p.id: p.energy_ratio for p in prey[:3]}
+    return DecisionRequest(creature.id, view, action_menu(creature.species), signals, questions, truth)

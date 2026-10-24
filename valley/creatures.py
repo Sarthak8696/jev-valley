@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from valley.clock import clock_text
+from valley.questions import NEUTRAL
 from valley.species import SPECIES, Species
 
 if TYPE_CHECKING:
@@ -43,6 +44,12 @@ class Creature:
     cause: str | None = None
     notes: list[list] = field(default_factory=list)  # [[step, text], ...] for the replay
     start_age: int = 0  # age in hours when it entered the valley, so a replay can show its age at any step
+    # What the brain answered to the extra questions this hour (valley/questions.py). The neutral values change nothing.
+    alertness: float = NEUTRAL
+    effort: float = NEUTRAL
+    breed_ok: bool = True
+    weak_scores: dict = field(default_factory=dict)  # prey id -> how weak the wolf judged it, 0 to 4
+    attacked: bool = False  # a wolf tried to catch it this hour, whether or not it succeeded
 
     @property
     def spec(self) -> Species:
@@ -67,6 +74,13 @@ class Creature:
     def can_breed(self) -> bool:
         spec = self.spec
         return self.is_adult and self.cooldown <= 0 and self.energy >= spec.breed_min_energy
+
+    def take_answers(self, extras: dict) -> None:
+        """Remember this hour's answers to the extra questions. Missing ones mean the neutral value."""
+        self.alertness = extras.get("alert", NEUTRAL)
+        self.effort = extras.get("effort", NEUTRAL)
+        self.breed_ok = extras.get("breed", 1.0) >= 0.5
+        self.weak_scores = {key.split(":", 1)[1]: value for key, value in extras.items() if key.startswith("weak:")}
 
     def remember(self, step: int, text: str) -> None:
         """Add a notable event. Only the last three are kept; the replay keeps every one except hesitation."""

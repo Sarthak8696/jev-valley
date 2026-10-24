@@ -67,6 +67,42 @@ def score_actions(signals: dict, actions) -> dict:
     return scores
 
 
+def _clamp(value: float, low: float, high: float) -> float:
+    return max(low, min(high, value))
+
+
+def answer_question(signals: dict, question) -> float:
+    """The hand-written answer to one extra question (valley/questions.py), from the signals alone.
+
+    Like the choice scores, these use only what the animal could see: no hidden numbers.
+    """
+    key = question.key
+    energy, hydration = signals["energy"], signals["hydration"]
+    threat, personality = signals["threat_dist"], signals["personality"]
+    if key == "alert":
+        level = 1.0 if threat is None else 4.0 if threat <= 2 else 3.0 if threat <= 4 else 2.0
+        if threat is None and energy < 0.3:
+            level = 0.5  # too hungry to look up
+        level += {"timid": 0.5, "cautious": 0.5, "bold": -0.5, "greedy": -0.3}.get(personality, 0.0)
+        return _clamp(level, 0.0, question.top)
+    if key == "attack":
+        return 0.03 if threat is None else 0.7 if threat <= 2 else 0.35 if threat <= 4 else 0.15
+    if key == "breed":
+        safe = threat is None or threat > 4
+        return 0.9 if energy >= 0.55 and hydration >= 0.4 and safe else 0.15
+    if key == "effort":
+        if energy < 0.35:
+            return 3.0  # starving: run hard
+        return 2.5 if signals["prey_dist"] is not None and signals["prey_dist"] <= 2 else 1.5
+    if key.startswith("weak:"):
+        cue = next((c for c in signals["prey_cues"] if c["id"] == key.split(":", 1)[1]), None)
+        if cue is None:
+            return 2.0
+        level = (0.8, 2.2, 3.5)[cue["cond"]] + (0.5 if cue["young"] else 0.0) + (0.4 if cue["alone"] else 0.0)
+        return _clamp(level, 0.0, question.top)
+    raise ValueError(f"no answer is written for the question {key!r}")
+
+
 def softmax(scores: dict, temperature: float = TEMPERATURE) -> dict:
     top = max(scores.values())
     weights = {a: math.exp((s - top) / temperature) for a, s in scores.items()}
@@ -92,7 +128,8 @@ class RulesBrain(Brain):
                 choice = action
                 if roll < cumulative:
                     break
-            out.append(Decision(choice, probabilities, probabilities[choice], "baseline"))
+            extras = {q.key: round(answer_question(request.signals, q), 3) for q in request.questions}
+            out.append(Decision(choice, probabilities, probabilities[choice], "baseline", extras=extras))
         self.decisions += len(out)
         return out
 

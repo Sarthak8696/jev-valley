@@ -7,6 +7,7 @@ the creature. They draw randomness only from `sim.event_rng`.
 import math
 
 from valley.perception import nearest_carcass, visible_creatures
+from valley.questions import NEUTRAL
 from valley.species import ACTION_COST, PREY_SPECIES, WOLF
 from valley.world import DIRECTIONS, FOREST, WATER, chebyshev
 
@@ -18,6 +19,14 @@ LOSE_TRAIL_DISTANCE = 2
 LOSE_TRAIL_CHANCE = 0.4
 WEAK_PREY_BIAS = 1.0  # catch chance changes by this much for every 100% of energy the prey is below half
 WEAK_PREY_RANGE = (0.4, 1.6)
+# How the world reacts to the answers of the rich mode (valley/questions.py). Each is the change per level of a 0 to 4
+# score above or below the neutral 2, so a brain that answers 2 everywhere plays the choice-only game.
+ALERT_INTAKE_PER_LEVEL = 0.08  # grazing yield falls this much per level of alertness
+ALERT_CATCH_PER_LEVEL = 0.10  # a wolf's chance against that animal falls this much per level
+EFFORT_CATCH_PER_LEVEL = 0.08  # a wolf's chance of a catch rises this much per level of chase effort
+EFFORT_COST_PER_LEVEL = 0.15  # and a hunting hour costs this much more energy
+EFFORT_TRAIL_PER_LEVEL = 0.08  # and it loses the trail this much less often
+TARGET_DISTANCE_WEIGHT = 0.35  # a wolf trades one level of weakness for this many tiles of distance
 EXPLORE_TURN_CHANCE = 0.25
 SCAVENGE_STEPS = 2
 SCAVENGE_BITE = 15
@@ -27,7 +36,10 @@ def execute(sim, creature) -> None:
     """Carry out the creature's executed action, then charge its upkeep for the hour."""
     HANDLERS[creature.executed](sim, creature)
     spec = creature.spec
-    creature.energy -= spec.energy_loss * ACTION_COST[creature.executed]
+    cost = ACTION_COST[creature.executed]
+    if creature.executed == "hunt":
+        cost *= 1 + EFFORT_COST_PER_LEVEL * (creature.effort - NEUTRAL)
+    creature.energy -= spec.energy_loss * cost
     creature.hydration -= spec.hydration_loss
 
 
@@ -103,7 +115,8 @@ def eat(sim, creature) -> None:
     world, spec = sim.world, creature.spec
     if world.plants(creature.x, creature.y) > 0:
         world.eat_plant(creature.x, creature.y)
-        creature.energy = min(spec.max_energy, creature.energy + spec.plant_energy)
+        gain = spec.plant_energy * max(0.3, 1 - ALERT_INTAKE_PER_LEVEL * (creature.alertness - NEUTRAL))
+        creature.energy = min(spec.max_energy, creature.energy + gain)
         return
     target = world.nearest_plants(creature.x, creature.y, spec.vision, include_here=False,
                                   occupied=sim.occupied)
@@ -152,13 +165,13 @@ def seek_mate(sim, creature) -> None:
     if not creature.can_breed():
         explore(sim, creature)
         return
-    partners = [c for c in _visible(sim, creature) if c.species == creature.species and c.can_breed()]
+    partners = [c for c in _visible(sim, creature) if c.species == creature.species and c.can_breed() and c.breed_ok]
     if not partners:
         explore(sim, creature)
         return
     partner = partners[0]
     step_toward(sim, creature, partner.x, partner.y)
-    if chebyshev(creature.x, creature.y, partner.x, partner.y) <= 1 and sim.cap_allows(creature.species):
+    if chebyshev(creature.x, creature.y, partner.x, partner.y) <= 1 and creature.breed_ok and sim.cap_allows(creature.species):
         sim.breed(creature, partner)
 
 
@@ -176,9 +189,10 @@ def hunt(sim, creature) -> None:
     if not prey:
         explore(sim, creature)
         return
-    target = prey[0]
+    target = pick_target(creature, prey)
+    trail_chance = min(0.9, max(0.05, LOSE_TRAIL_CHANCE - EFFORT_TRAIL_PER_LEVEL * (creature.effort - NEUTRAL)))
     if (chebyshev(creature.x, creature.y, target.x, target.y) > LOSE_TRAIL_DISTANCE
-            and sim.event_rng.random() < LOSE_TRAIL_CHANCE):
+            and sim.event_rng.random() < trail_chance):
         creature.remember(sim.step_no, f"lost the trail of {target.name} the {target.species}")
         explore(sim, creature)
         return
@@ -191,10 +205,27 @@ def hunt(sim, creature) -> None:
         _try_catch(sim, creature, target)
 
 
+def pick_target(wolf, prey: list):
+    """The prey animal to chase. `prey` is nearest first. Without any weakness scores that is the nearest.
+
+    With them, among the first three the wolf takes the best trade of weakness against distance, the nearest on a tie.
+    An animal the wolf has not judged (it came into view after the question was asked) counts as neutral.
+    """
+    if not wolf.weak_scores:
+        return prey[0]
+    scored = [(wolf.weak_scores.get(p.id, NEUTRAL) - TARGET_DISTANCE_WEIGHT * chebyshev(wolf.x, wolf.y, p.x, p.y), -i, p)
+              for i, p in enumerate(prey[:3])]
+    return max(scored, key=lambda item: item[:2])[2]
+
+
 def _try_catch(sim, wolf, prey) -> None:
+    prey.attacked = True
     chance = wolf.spec.catch_chance[prey.species]
     low, high = WEAK_PREY_RANGE
     chance *= max(low, min(high, 1.0 + WEAK_PREY_BIAS * (0.5 - prey.energy_ratio)))
+    chance *= max(0.2, 1 + ALERT_CATCH_PER_LEVEL * (NEUTRAL - prey.alertness))
+    chance *= max(0.2, 1 + EFFORT_CATCH_PER_LEVEL * (wolf.effort - NEUTRAL))
+    chance = min(0.95, chance)
     if sim.world.terrain(prey.x, prey.y) == FOREST and prey.executed == "hide":
         chance *= HIDING_CATCH_FACTOR
     if prey.executed == "flee":

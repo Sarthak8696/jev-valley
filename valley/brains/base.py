@@ -1,6 +1,20 @@
 """The brain interface: what a brain is asked and what it answers."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+
+@dataclass
+class Question:
+    """An extra question asked in the same request as the action. Its answer is a number, not an action."""
+    key: str  # "alert", "breed", "attack", "effort" or "weak:<creature id>"
+    type: str  # "score" or "noul"
+    instructions: str
+    criteria: object  # a score: the ordered level descriptions. A noul: {"true": ..., "false": ...}
+
+    @property
+    def top(self) -> float:
+        """The highest value a score can take."""
+        return float(len(self.criteria) - 1) if self.type == "score" else 1.0
 
 
 @dataclass
@@ -9,6 +23,8 @@ class DecisionRequest:
     view: dict  # sent to the model
     options: dict  # action key -> description, in the species' action order
     signals: dict  # never sent to a model
+    questions: list = field(default_factory=list)  # extra Questions, empty in the choice-only mode
+    truth: dict = field(default_factory=dict)  # what is really the case, for scoring the answers; never sent
 
 
 class DecisionError(RuntimeError):
@@ -22,6 +38,7 @@ class Decision:
     confidence: float
     source: str  # "model" or "baseline"
     latency_ms: float | None = None
+    extras: dict = field(default_factory=dict)  # question key -> a score (0 to its top) or a noul (probability of yes)
 
 
 class Brain:

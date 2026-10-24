@@ -17,7 +17,9 @@ class RandomBrain(Brain):
         for request in requests:
             keys = list(request.options)
             chance = 1.0 / len(keys)
-            out.append(Decision(self.rng.choice(keys), {key: chance for key in keys}, chance, "baseline"))
+            choice = self.rng.choice(keys)
+            extras = {q.key: round(self.rng.uniform(0.0, q.top), 3) for q in request.questions}  # a yes/no is a number from 0 to 1 too
+            out.append(Decision(choice, {key: chance for key in keys}, chance, "baseline", extras=extras))
         self.decisions += len(out)
         return out
 
