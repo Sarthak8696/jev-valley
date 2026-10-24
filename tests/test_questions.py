@@ -79,7 +79,7 @@ def test_how_a_prey_animal_looks_is_coarser_than_its_energy():
 
 # -- how the world reacts -------------------------------------------------------------
 
-@pytest.mark.parametrize("alertness, factor", [(0.0, 1.16), (2.0, 1.0), (4.0, 0.84)])
+@pytest.mark.parametrize("alertness, factor", [(0.0, 1.12), (2.0, 1.0), (4.0, 0.88)])
 def test_a_watchful_animal_gets_less_from_grazing(alertness, factor):
     rabbit = make_creature("rabbit", 5, 5, energy=10, alertness=alertness)
     sim = scene([rabbit], plants={(5, 5): 2})
@@ -98,7 +98,7 @@ def catch_happens(roll, prey_alertness=NEUTRAL, effort=NEUTRAL):
 
 
 @pytest.mark.parametrize("alertness, effort, factor", [
-    (2.0, 2.0, 1.0), (4.0, 2.0, 0.8), (0.0, 2.0, 1.2), (2.0, 4.0, 1.16), (2.0, 0.0, 0.84), (4.0, 4.0, 0.8 * 1.16),
+    (2.0, 2.0, 1.0), (4.0, 2.0, 0.9), (0.0, 2.0, 1.1), (2.0, 4.0, 1.16), (2.0, 0.0, 0.84), (4.0, 4.0, 0.9 * 1.16),
 ])
 def test_alertness_and_chase_effort_change_the_chance_of_a_catch(alertness, effort, factor):
     chance = SPECIES["wolf"].catch_chance["rabbit"] * factor

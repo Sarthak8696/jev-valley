@@ -21,8 +21,8 @@ WEAK_PREY_BIAS = 1.0  # catch chance changes by this much for every 100% of ener
 WEAK_PREY_RANGE = (0.4, 1.6)
 # How the world reacts to the answers of the rich mode (valley/questions.py). Each is the change per level of a 0 to 4
 # score above or below the neutral 2, so a brain that answers 2 everywhere plays the choice-only game.
-ALERT_INTAKE_PER_LEVEL = 0.08  # grazing yield falls this much per level of alertness
-ALERT_CATCH_PER_LEVEL = 0.10  # a wolf's chance against that animal falls this much per level
+ALERT_INTAKE_PER_LEVEL = 0.06  # grazing yield falls this much per level of alertness
+ALERT_CATCH_PER_LEVEL = 0.05  # a wolf's chance against that animal falls this much per level
 EFFORT_CATCH_PER_LEVEL = 0.08  # a wolf's chance of a catch rises this much per level of chase effort
 EFFORT_COST_PER_LEVEL = 0.15  # and a hunting hour costs this much more energy
 EFFORT_TRAIL_PER_LEVEL = 0.08  # and it loses the trail this much less often
