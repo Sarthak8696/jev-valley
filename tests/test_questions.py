@@ -6,9 +6,8 @@ import pytest
 
 from tests.helpers import FixedRng, make_creature, make_sim, open_rows, world_from_rows
 from valley import actions
-from valley.brains import make_brain
+from tests.offline import RulesBrain, answer_question, make_offline_brain as make_brain
 from valley.brains.base import Decision, Question
-from valley.brains.rules import RulesBrain, answer_question
 from valley.perception import build_request, condition, prey_cues
 from valley.questions import ALERT_LEVELS, NEUTRAL, prey_questions, wolf_questions
 from valley.simulation import Simulation

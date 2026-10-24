@@ -2008,9 +2008,7 @@ function buildHeader(meta) {
   const brainText = same ? `<b>${esc(brains.rabbit)}</b> for every species`
     : ["rabbit", "deer", "wolf"].map((s) => `${s}s on <b>${esc(brains[s])}</b>`).join(", ");
   const hes = meta.hesitate_below == null ? "off" : `below ${(+meta.hesitate_below).toFixed(2)} confidence`;
-  const offline = Object.values(brains).some((b) => b === "rules" || b === "random");
-  const offlineChip = offline ? '<span class="chip warn" title="rules and random are hand-written baselines. No model is called and no cost is incurred.">Offline baseline: no model is deciding</span>' : "";
-  els.runinfo.innerHTML = `${offlineChip}<span>Brain: ${brainText}</span><span>Seed <b>${esc(meta.seed)}</b></span><span>Hesitation <b>${hes}</b></span>`;
+  els.runinfo.innerHTML = `<span>Brain: ${brainText}</span><span>Seed <b>${esc(meta.seed)}</b></span><span>Hesitation <b>${hes}</b></span>`;
 }
 const esc = (value) => String(value).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
@@ -2314,7 +2312,7 @@ function liveStatus(pace, calls) {
   if (calls) {
     parts.push(calls.requests > 0
       ? `${calls.requests.toLocaleString()} model requests, ${calls.input_tokens.toLocaleString()} input tokens`
-      : "no API calls (offline brain)");
+      : "no model requests yet");
   }
   return parts.join(" · ");
 }

@@ -1,8 +1,9 @@
-"""A hand-written baseline that never calls a model.
+"""Stand-ins for a model, used only by the tests. They are not part of the valley.
 
-It scores each action from the signals, turns the scores into probabilities with
-a softmax, and samples a choice with `brain_rng`. It is a fair reference, not a
-strawman: do not weaken it to make a model look better.
+Nothing in `valley/` can run without a model (Jev, or a server that speaks the same request format). The tests, though,
+must run offline and repeatably, so they decide with these two hand-written brains instead: `rules`, which scores each
+action from the animal's signals, and `random`, which picks uniformly. Both also answer the rich mode's extra questions.
+`tests/conftest.py` lets the benchmark and live code build them by the names "rules" and "random" while a test runs.
 """
 
 import math
@@ -136,3 +137,41 @@ class RulesBrain(Brain):
     def summary(self) -> dict:
         return {"decisions": self.decisions, "requests": 0, "retries": 0,
                 "input_tokens": 0, "output_tokens": 0, "latencies_ms": []}
+
+
+
+class RandomBrain(Brain):
+    name = "random"
+
+    def __init__(self, rng: random.Random):
+        self.rng = rng  # brain_rng
+        self.decisions = 0
+
+    def decide(self, requests: list[DecisionRequest], step: int = 0) -> list[Decision]:
+        out = []
+        for request in requests:
+            keys = list(request.options)
+            chance = 1.0 / len(keys)
+            choice = self.rng.choice(keys)
+            extras = {q.key: round(self.rng.uniform(0.0, q.top), 3) for q in request.questions}  # a yes/no is a number from 0 to 1 too
+            out.append(Decision(choice, {key: chance for key in keys}, chance, "baseline", extras=extras))
+        self.decisions += len(out)
+        return out
+
+    def summary(self) -> dict:
+        return {"decisions": self.decisions, "requests": 0, "retries": 0,
+                "input_tokens": 0, "output_tokens": 0, "latencies_ms": []}
+
+
+OFFLINE_NAMES = ("rules", "random")
+
+
+def make_offline_brain(spec: str, seed: int = 0) -> Brain:
+    """The test double called `rules` or `random`, with its own random stream derived from the seed."""
+    from valley.world import derive_seed
+    rng = random.Random(derive_seed(seed, "brain", 0))
+    if spec == "rules":
+        return RulesBrain(rng)
+    if spec == "random":
+        return RandomBrain(rng)
+    raise ValueError(f"no test brain called {spec!r}")

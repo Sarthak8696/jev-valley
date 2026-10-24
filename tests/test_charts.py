@@ -6,7 +6,7 @@ pytest.importorskip("matplotlib")
 
 from valley import charts  # noqa: E402
 
-RUNS = {"jev": 10, "rules": 10, "random": 9}
+RUNS = {"jev": 10, "system-one": 10, "other-model": 9}
 
 
 def series(scale):
@@ -19,14 +19,14 @@ def read(path):
 
 def test_population_chart_draws_every_brain_in_its_own_color(tmp_path):
     path = tmp_path / "population.svg"
-    charts.population_chart(str(path), {"jev": series(3), "rules": series(2), "random": series(1)}, RUNS)
+    charts.population_chart(str(path), {"jev": series(3), "system-one": series(2), "other-model": series(1)}, RUNS)
     text = read(path)
     assert "<svg" in text and "Median population over the month" in text
-    for color in ("#2a78d6", "#1baf7a", "#898781"):
+    for color in ("#2a78d6", "#6250d6", "#e87ba4"):  # Jev, then the first two other brains
         assert color in text
-    for label in ("Rabbits", "Deer", "Wolves", "Jev", "Rules", "Random"):
+    for label in ("Rabbits", "Deer", "Wolves", "Jev", "system one", "other model"):
         assert label in text
-    assert "Runs per line: Jev: 10, Rules: 10, Random: 9" in text
+    assert "Runs per line: Jev: 10, system one: 10, other model: 9" in text
 
 
 def test_charts_are_reproducible_byte_for_byte(tmp_path):
@@ -39,16 +39,16 @@ def test_charts_are_reproducible_byte_for_byte(tmp_path):
 
 def test_charts_use_the_light_chart_surface(tmp_path):
     path = tmp_path / "blunders.svg"
-    charts.blunders_chart(str(path), {"rules": [0.05, 0.07], "random": [0.4, 0.45]})
+    charts.blunders_chart(str(path), {"jev": [0.05, 0.07], "system-one": [0.4, 0.45]})
     assert "#fcfcfb" in read(path)
 
 
 def test_blunders_chart_shows_the_mean_of_each_brain(tmp_path):
     path = tmp_path / "blunders.svg"
-    charts.blunders_chart(str(path), {"rules": [0.05, 0.07], "random": [0.4, 0.5]})
+    charts.blunders_chart(str(path), {"jev": [0.05, 0.07], "system-one": [0.4, 0.5]})
     text = read(path)
     assert "6.0%" in text and "45.0%" in text
-    assert "Random" in text and "Rules" in text
+    assert "Jev" in text and "system one" in text
 
 
 def test_blunders_chart_with_no_data_says_so(tmp_path):
@@ -71,19 +71,19 @@ def test_calibration_chart_has_one_line_per_model_brain(tmp_path):
 
 
 def test_hesitation_groups_share_a_brain_color_and_differ_by_line_style():
-    style = charts.Style(["jev-h-off", "jev-h-p10", "jev-h-p25", "rules-h-off"])
+    style = charts.Style(["jev-h-off", "jev-h-p10", "jev-h-p25", "system-one-h-off"])
     assert style.colors["jev-h-off"] == style.colors["jev-h-p10"] == style.colors["jev-h-p25"] == "#2a78d6"
-    assert style.colors["rules-h-off"] == "#1baf7a"
+    assert style.colors["system-one-h-off"] == "#6250d6"
     assert len({style.line_style(g) for g in ("jev-h-off", "jev-h-p10", "jev-h-p25")}) == 3
-    assert charts.brain_of("wolf-jev_prey-rules") == "wolf-jev_prey-rules"
+    assert charts.brain_of("wolf-jev_prey-system-one") == "wolf-jev_prey-system-one"
     assert charts.condition_of("jev-h-p25") == "p25" and charts.condition_of("jev") is None
 
 
 def test_mixed_brain_groups_get_extra_colors_that_stay_stable():
-    style = charts.Style(["wolf-jev_prey-rules", "wolf-rules_prey-jev", "jev"])
+    style = charts.Style(["wolf-jev_prey-system-one", "wolf-system-one_prey-jev", "jev"])
     assert style.colors["jev"] == "#2a78d6"
-    assert style.colors["wolf-jev_prey-rules"] != style.colors["wolf-rules_prey-jev"]
-    assert style.colors["wolf-jev_prey-rules"] not in ("#2a78d6", "#1baf7a", "#898781")
+    assert style.colors["wolf-jev_prey-system-one"] != style.colors["wolf-system-one_prey-jev"]
+    assert style.colors["wolf-jev_prey-system-one"] != "#2a78d6"
     assert len(set(style.markers.values())) == 3
 
 

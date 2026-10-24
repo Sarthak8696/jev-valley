@@ -26,8 +26,7 @@ def run(experiment, tmp_path, **kwargs):
 
 def test_survival_plan_covers_every_brain_and_seed():
     specs = plan_runs("survival", SEEDS, 30)
-    assert [s.id for s in specs] == [f"survival-{b}-seed{seed}" for b in ("jev", "rules", "random")
-                                     for seed in SEEDS]
+    assert [s.id for s in specs] == [f"survival-jev-seed{seed}" for seed in SEEDS]  # the valley runs only on a model
     assert all(set(s.brains.values()) == {s.brain_label} for s in specs)
 
 

@@ -11,7 +11,10 @@ from pathlib import Path
 
 import pytest
 
-from valley.bench import RunSpec, run_one
+from tests.offline import make_offline_brain
+from valley.replay import build_replay, write_replay
+from valley.simulation import Simulation
+from valley.species import SPECIES
 
 VIEWER = Path(__file__).resolve().parent.parent / "viewer" / "index.html"
 START = "/* ---- begin pure code"
@@ -65,8 +68,12 @@ console.log(JSON.stringify({
 @pytest.fixture(scope="module")
 def measured(tmp_path_factory):
     folder = tmp_path_factory.mktemp("motion")
-    spec = RunSpec(seed=57, brains={k: "rules" for k in ("rabbit", "deer", "wolf")}, days=5)
-    result = run_one(spec, str(folder / "run"))
+    brain = make_offline_brain("rules", 57)  # a stand-in for a model: the valley itself cannot run without one
+    sim = Simulation(57, {s: brain for s in SPECIES}, days=5, questions="rich")
+    sim.run()
+    replay_path = folder / "replay.json"
+    write_replay(str(replay_path), build_replay(sim, "motion"))
+    result = {"paths": {"replay": str(replay_path)}}
     html = VIEWER.read_text(encoding="utf-8")
     code = html[html.index(START):html.index(END) + len(END)]
     script = folder / "motion.js"

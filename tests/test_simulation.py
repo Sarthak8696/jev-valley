@@ -4,7 +4,7 @@ import random
 import pytest
 
 from tests.helpers import FixedRng, ScriptedBrain, make_creature, make_sim, open_rows, world_from_rows
-from valley.brains.random_brain import RandomBrain
+from tests.offline import RandomBrain
 from valley.simulation import Simulation
 from valley.species import SPECIES, SPECIES_ORDER
 from valley.world import DEFAULT_HEIGHT, DEFAULT_WIDTH, PASSABLE, derive_seed

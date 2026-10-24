@@ -391,6 +391,10 @@ def test_a_plain_kill_stops_the_run_like_ctrl_c_and_saves_what_was_decided(tmp_p
     import subprocess
     import sys
     code = (
+        "from tests.offline import make_offline_brain\n"
+        "from valley import bench\n"
+        "bench.make_brain = lambda spec, seed=0, **options: make_offline_brain(spec, seed)  # a stand-in for a model\n"
+        "bench.is_model_brain = lambda spec: False\n"
         "from valley.bench import RunSpec\n"
         "from valley.live import LiveServer\n"
         "spec = RunSpec(seed=19, brains={'rabbit': 'rules', 'deer': 'rules', 'wolf': 'rules'}, experiment='live', days=30, log_requests=True)\n"

@@ -101,8 +101,7 @@ jev-valley/
 │       ├── __init__.py          make_brain()
 │       ├── base.py              Brain, DecisionRequest, Decision
 │       ├── system_one.py        SystemOneBrain (Jev and Laya)
-│       ├── rules.py             RulesBrain
-│       └── random_brain.py      RandomBrain
+│       └── (rules.py and random_brain.py were removed: see the Decisions log)
 ├── viewer/
 │   └── index.html               the 3D viewer, one file
 ├── tests/
@@ -266,6 +265,8 @@ These are the starting values. They are tuned in phase 5 until the targets in 5.
 | Creature cap | 50 |
 
 ### 5.5 Balance targets
+
+**Removed on 2026-10-25.** The offline brains these targets were checked with no longer exist, and the valley cannot run without a model, so the targets cannot be checked. They stay here as the record of how the valley was balanced. The check, and the brains, are in the history at commit `4d545ed`.
 
 `python -m valley tune --check` runs the `rules` and `random` brains on the ten benchmark seeds (8.1) and reports each target as pass or fail. Tuning is finished when all pass.
 
@@ -541,6 +542,8 @@ Each line of `requests.jsonl`:
 
 ### 7.4 `RulesBrain`
 
+**Removed on 2026-10-25.** The valley runs only on a model. The description below is the record of what the brain did; the code is at commit `4d545ed`. The tests keep a copy under `tests/offline.py` as a stand-in for a model, because they must run offline.
+
 A hand-written baseline that never calls a model. It scores each action from the signals, turns the scores into probabilities with a softmax at temperature 0.35, and samples a choice with `brain_rng`. Confidence is the probability of the chosen action. Source is `baseline`.
 
 Scores, where `hunger = 1 − energy` and `thirst = 1 − hydration`:
@@ -562,9 +565,13 @@ The rules brain is a fair reference, not a strawman. Do not weaken it to make a 
 
 ### 7.5 `RandomBrain`
 
+**Removed on 2026-10-25**, with `RulesBrain` (see 7.4).
+
 Picks uniformly at random with `brain_rng`. Probabilities are uniform. Source is `baseline`.
 
 ### 7.6 `make_brain(spec)`
+
+Since 2026-10-25 it knows only `jev` and `system-one@URL#MODEL`; any other name raises an error that says the valley runs only on a model.
 
 Accepts `jev`, `laya`, `rules`, `random`, or `system-one@{base_url}#{model}` for any other server using the same API. Species that use the same spec share one brain instance, so their totals are combined and their requests can share batches.
 
@@ -857,7 +864,7 @@ If phase 11 shows the API differs from 7.3, fix the client, add a test for the r
 ## 15. Definition of done
 
 - [ ] Every test in section 12 passes offline.
-- [ ] `python -m valley tune --check` passes.
+- [x] ~~`python -m valley tune --check` passes.~~ Removed 2026-10-25 with the offline brains (see the Decisions log).
 - [ ] A real Jev run and a real Laya run exist, each with a `requests.jsonl`.
 - [ ] `survival` and `hesitation` results are generated and committed.
 - [ ] The 3D viewer is hosted and plays a real Jev month.
@@ -966,6 +973,11 @@ Record every choice not covered above, and every change to a value in this docum
 | 2026-10-21 | The playback speed buttons (1×, 4×, 16×) are removed, and so is the live viewer's automatic speed-up when it falls behind. Playback is one valley hour per second, or in live mode the pace the run arrives at. This changes 4.2, 10.5 and the 2026-10-20 live-motion row. | The author asked for the fast-forward option to be removed completely. |
 | 2026-10-21 | The viewer gains a full-screen button (also `F`; `Esc` leaves). It fullscreens the view and the timeline, using the browser's full screen where it exists and a page-covering layout otherwise (an iPhone). A small card with the selected animal's name, choice and confidence shows in full screen, because the side panels are not on screen. | The author asked for a full-screen option. |
 | 2026-10-21 | In live mode the timeline slider is hidden, and the arrow keys do not step hours, until the run has played to its end. A finished replay has the slider from the start. A run that stopped on a model error also unlocks it once its last hour has played. | The author asked that the slider be a playback option only after the whole playthrough has completed. |
+| 2026-10-25 | **The offline brains are removed completely.** `rules` and `random` are deleted from `valley/`, together with the balance check (`tune --check`, the 5.5 targets, `simulate_offline`) and the offline chip in the viewer. `run`, `live` and `bench` accept only `jev` or `system-one@URL#MODEL`; any other name is an error. `bench survival` now defaults to Jev alone, so it compares Jev with other models only when given `--brains jev,system-one@URL#MODEL`. The last commit that has the code is `4d545ed`. The tests keep hand-written stand-ins for a model in `tests/offline.py`, wired in by `tests/conftest.py`, because the tests must run offline and repeatably; nothing in `valley/` can use them. | The author's instruction, twice: first that the valley must not run without Jev, then "completely remove the offline run". This settles the question left open on 2026-10-20 about keeping the baselines. It costs the benchmark its hand-written comparison and the project its offline balance check, so the valley's balance is now checked only by running Jev. |
+| 2026-10-25 | The rich question mode is added and is the default (`--questions rich|basic`). Each animal also answers `score` and `noul` questions in the same request, and the world reacts: prey `alert` (0 to 4; each level costs 6% of grazing yield and makes a wolf 5% less likely to catch it), everyone `breed` (both partners must say yes), prey `attack` (only scored), wolves `weak:<id>` for up to three visible prey (the wolf takes the best of weakness minus 0.35 per tile) and `effort` (each level adds 8% to the catch chance, costs 15% more energy and loses the trail 8 points less often). A score of 2 changes nothing, and a test checks that neutral answers play exactly the choice-only game. The answers are scored against what the simulation knows (Brier score and calibration by wolf distance for `attack`, alertness by threat, weakness against real energy, breeding by whether the animal could) and shown in the benchmark's Judgement section. The replay format is `@3`, with the answers as an optional eleventh item of an agent row; `@2` files still load. | The author asked for the other two Jev question types, with a world that reacts. A wolf's view says how each prey looks (age, alone, looks well, tired or weak) only in this mode, so that the weakness question has something to judge. |
+| 2026-10-25 | The alertness effects were set to 6% of grazing and 5% of the catch chance per level. With the `rules` and `random` brains answering (then still present): all five balance targets passed on the ten benchmark seeds; on 100 unseen seeds all three species were alive on 96%, wolves were never alone, a rabbit boom and bust happened on 90%, and a species sat at its cap for over half the month on 11% (2% in the choice-only mode). | The larger first sizes (8% and 10%) let prey sit at their caps more often. The 11% shows the rich mode is a little less balanced than the choice-only one; it was not re-tuned further because the brains it was measured with were then removed. |
+| 2026-10-25 | The live valley never runs ahead of the viewer: the page POSTs its playhead and paused state to `/control`, and the server starts no new hour while paused or when more than 3 hours ahead of the playhead (the hour in flight finishes). A viewer that never reports is not held back. A termination signal stops a live run like Ctrl-C and saves it, and the stream keepalive is 2 seconds so a viewer closed during a pause is noticed. | The author: when the simulation is stopped, everything should freeze at once because no decisions are happening. Checked against the real API: 74 requests stayed 74 for 10 seconds while paused. |
+| 2026-10-25 | Checked against the live Jev API (jev-latest is jev-1.14.0): one-day valley runs of 95 and 94 requests had no errors and no retries, with a median of 360 and 421 ms. `choice`, `score` and `noul` answers have the shapes in the docs; a captured response is a test fixture. | First contact with the real API; the author supplied the key. The key is never written to a file. |
 
 ## Phase 5 tuning record
 

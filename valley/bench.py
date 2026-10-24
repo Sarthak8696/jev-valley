@@ -28,7 +28,7 @@ from valley.world import DEFAULT_HEIGHT, DEFAULT_MAX_CREATURES, DEFAULT_WIDTH
 
 PREY = ("rabbit", "deer")
 EXPERIMENTS = ("survival", "hesitation")
-DEFAULT_BRAINS = {"survival": ("jev", "rules", "random"), "hesitation": ("jev",)}
+DEFAULT_BRAINS = {"survival": ("jev",), "hesitation": ("jev",)}
 # `bench` defaults to the first five benchmark seeds and to hesitation for Jev only, which keeps the set of
 # model runs small (about 20). The full set of seeds is `--seeds` with all of BENCH_SEEDS.
 DEFAULT_SEEDS = BENCH_SEEDS[:5]
@@ -43,7 +43,7 @@ class RunCancelled(Exception):
 @dataclass
 class RunSpec:
     seed: int
-    brains: dict  # species key -> brain spec such as "jev" or "rules"
+    brains: dict  # species key -> brain spec such as "jev" or "system-one@URL#MODEL"
     experiment: str = "run"
     days: int = 30
     width: int = DEFAULT_WIDTH
@@ -592,7 +592,7 @@ def render_markdown(summary: dict) -> str:
             ])
     parts += ["## Cost and speed", "",
               "Totals over all runs. Latency is per request, and the valley-hour pace is the wait for all of "
-              "an hour's decisions. Baseline brains make no requests. The last column is input-token cost and "
+              "an hour's decisions. The last column is input-token cost and "
               "appears only when a price was given.", "",
               _table(["Group", "Brain", "Decisions", "Requests", "Retries",
                       "Input tokens per 1,000", "Output tokens per 1,000", "Latency p50 / p95 (ms)",

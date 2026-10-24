@@ -1,8 +1,8 @@
 """What a creature can see and feel, as plain language for a model and as raw signals for code.
 
 `build_request` turns one creature's surroundings into a `DecisionRequest`. The
-view is sent to the model. The signals are never sent: they are for the `rules`
-brain and for the blunder metric.
+view is sent to the model. The signals are never sent: they are for the blunder metric
+and for scoring the answers to the extra questions.
 """
 
 from valley.brains.base import DecisionRequest

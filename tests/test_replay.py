@@ -7,7 +7,7 @@ import pytest
 
 from valley import cli
 from valley.bench import RunSpec, brain_label, run_one
-from valley.brains import make_brain
+from tests.offline import make_offline_brain as make_brain
 from valley.replay import (
     FORMAT, MAX_REPLAY_BYTES, build_replay, check_format, dumps, embed_in_viewer, food_grids, read_replay,
     write_replay,
@@ -160,14 +160,27 @@ def test_the_run_command_writes_a_replay(tmp_path, capsys):
 
 
 @pytest.mark.parametrize("command, flag", [("run", "--brain"), ("live", "--brain"), ("run", "--prey-brain"), ("live", "--wolf-brain")])
-@pytest.mark.parametrize("baseline", ["rules", "random"])
-def test_the_valley_does_not_run_without_a_model(command, flag, baseline, tmp_path, capsys):
-    with pytest.raises(SystemExit) as stop:
-        cli.main([command, flag, baseline, "--out", str(tmp_path / "x")])
-    assert stop.value.code == 2
+@pytest.mark.parametrize("name", ["rules", "random", "heuristic"])
+def test_the_valley_does_not_run_without_a_model(command, flag, name, tmp_path, monkeypatch, capsys):
+    """The hand-written brains were removed from the valley: only a model, or a server like one, can decide."""
+    monkeypatch.undo()  # the tests' stand-in brains are switched off here: this is the real valley
+    monkeypatch.setenv("TYPESAFE_API_KEY", "test-key-never-sent")  # so that the unknown brain is what fails, not a missing key
+    assert cli.main([command, flag, name, "--out", str(tmp_path / "x")]) == 2
     message = capsys.readouterr().err
-    assert "does not run without a model" in message and "bench" in message
-    assert not (tmp_path / "x").exists()
+    assert f"unknown brain '{name}'" in message and "jev or system-one@URL#MODEL" in message
+    assert not any((tmp_path / "x").glob("*.json")) if (tmp_path / "x").exists() else True
+
+
+def test_there_is_no_offline_brain_in_the_valley(monkeypatch):
+    monkeypatch.undo()
+    import importlib.util
+    from valley import brains
+    assert brains.MODEL_BRAINS == ("jev",) and not hasattr(brains, "BASELINE_BRAINS")
+    for module in ("valley.brains.rules", "valley.brains.random_brain"):
+        assert importlib.util.find_spec(module) is None
+    for name in ("rules", "random"):
+        with pytest.raises(ValueError, match="runs only on a model"):
+            brains.make_brain(name)
 
 
 def test_the_run_command_reports_a_missing_key_without_a_traceback(tmp_path, monkeypatch, capsys):
@@ -244,11 +257,10 @@ def test_the_retry_setting_reaches_the_client(monkeypatch):
     assert instances[0].max_retries == 0
 
 
-def test_the_viewer_marks_offline_baselines_and_explains_the_red_dashes():
+def test_the_viewer_explains_the_red_dashes_and_shows_real_model_usage():
     viewer = (Path(__file__).resolve().parent.parent / "viewer" / "index.html").read_text()
-    assert "Offline baseline: no model is deciding" in viewer
     assert 'id="hunt-toggle"' in viewer and "Wolf hunting its target" in viewer
-    assert "no API calls (offline brain)" in viewer and "model requests" in viewer
+    assert "model requests" in viewer and "offline" not in viewer.lower()
 
 
 def test_the_viewer_accepts_the_format_the_server_writes_and_the_older_one():
