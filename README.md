@@ -1,33 +1,154 @@
 # Jev Valley
 
-A small simulated valley where every rabbit, deer and wolf decides its next action by asking a typed decision model a `Choice` question and a few `Score` and yes/no (`Noul`) questions, once per valley hour.
+A small simulated valley where every rabbit, deer and wolf decides its next action by asking a typed decision model a `Choice` question and a few `Score` and yes/no (`Noul`) questions, once per valley hour. Nothing in the valley is scripted: the model decides what each animal does, and ordinary code decides how it happens.
 
-<!-- Add here: a GIF of the 3D viewer and a link to the hosted viewer. The author records the GIF and hosts the page. -->
+![Storm the wolf stalks Basil the rabbit at a pond: five seconds of a real run on Jev, recorded from the 3D viewer](docs/images/valley.gif)
 
-## See it running
+*Five seconds of a real run (seed 7, decided by Jev). Storm the wolf is hunting; the red dashed line joins a wolf that chose to hunt to its target.*
 
-The quickest way to see Jev Valley work is **live mode**. It starts a local page (on 127.0.0.1 only), waits for you to open it, and then plays the valley at one valley hour per real second while the model decides what every animal does next:
+Jump to: [Quick start](#quick-start) · [What you will see](#what-you-will-see) · [Commands](#commands) · [Troubleshooting](#troubleshooting) · [How it works](#how-it-works) · [Limitations](#limitations)
+
+## Quick start
+
+You need Python 3.11 or newer, an API key for Jev, and a current browser (Chrome, Edge, Firefox or Safari) with WebGL. The commands below are for macOS and Linux; Windows should work but has not been tried.
+
+**1. Get the code and install it.**
 
 ```bash
-export TYPESAFE_API_KEY=...        # your Jev key; it is read from the environment and never logged
-python -m valley live --seed 7 --open
+git clone https://github.com/Sarthak8696/jev-valley.git
+cd jev-valley
+python3 -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+pip install -e ".[dev,charts]"
 ```
 
-What you will see in the page:
+The valley itself uses only the Python standard library. The `dev` extra adds `pytest` for the tests, and `charts` adds `matplotlib`, which only the benchmark charts need. Check that it worked with `python -m valley --version`.
 
-- A 40 × 26 valley in 3D: a stream with fords, ponds, woods, meadows with wild flowers, and wooded hills around it. The sun, moon and stars follow the clock, and grass goes bare where animals have grazed. Rabbits, deer and wolves walk, trot, hop, graze, lie down, hide, hunt and drink, and keep moving smoothly across the turn of every hour. Drag to look around, scroll or pinch to zoom, right-drag or two fingers to slide, Q and E to turn, 0 to see the whole valley again, F for full screen.
-- Click any animal to see its hunger and thirst, what it chose this hour, the probability the model gave to every action ("Why it chose this"), and its recent memories.
-- A status line that shows the pace and the real usage so far, for example `Live: 1.0 hours per second · 214 model requests, 85,310 input tokens`. If the model is slow, the valley's clock slows down and the badge pulses while it waits. Decisions are never skipped or guessed.
-- A red dashed line from a wolf that chose to hunt to its nearest target. A legend in the corner of the view explains it, and clicking the legend hides the lines.
+**2. Give it your Jev key.**
+
+```bash
+export TYPESAFE_API_KEY=your-key-here     # Windows PowerShell: $env:TYPESAFE_API_KEY = "your-key-here"
+```
+
+The key is read from the environment, in the same terminal you run the next command from. It is never written to a file or a log. Without it nothing runs: the valley has no offline mode, and stops at once with `error: TYPESAFE_API_KEY is not set`.
+
+**3. Watch a two-day valley, live.**
+
+```bash
+python -m valley live --seed 7 --days 2 --open
+```
+
+The terminal prints `Jev Valley live at http://127.0.0.1:8765` and `Waiting for a viewer to connect before the valley starts.`, and your browser opens that page. (If it does not open, paste the address into a browser yourself.) The valley starts when the page is open and plays one valley hour per real second, so two days take about a minute and use roughly 2 million input tokens, about $0.10 at the documented price of $0.042 per million (an estimate: check your own usage). When the run ends, the timeline slider appears and the run is saved to `runs/live-jev-seed7/`. Leave `--days` out for a full month of 30 days, which takes 12 minutes or more.
+
+**4. Watch it again later, with no key and no cost.**
+
+```bash
+python -m valley view runs/live-jev-seed7/replay.json -o valley.html
+open valley.html                   # Linux: xdg-open valley.html    Windows: start valley.html
+```
+
+A finished replay has the timeline slider from the start, so you can scrub through it.
+
+That is all there is to running it. `run`, `bench` and `tune` have no window of their own; [Commands](#commands) says which command to use for what.
+
+## What you will see
+
+![Storm the wolf has chosen to hunt. The Mind panel shows the probability Jev gave every action and its answers to the other questions.](docs/images/wolf-hunting.jpg)
+
+*Day 2, 3 pm of the same run. Click any animal and the Mind panel shows what it needs, what it chose and why. Storm, a lazy 17-day-old wolf, chose Hunt (the model's own confidence was 89%; the bars are the probability of each action). Its other answers: Basil the rabbit looks 3.0 out of 4 on weakness, the chase deserves 1.9 out of 4 effort, and it is not a good time to have young. At 3 pm Storm caught Basil.*
+
+![The same moment from Basil the rabbit's side: it chose to flee, scored itself 3.8 out of 4 alert, and said a wolf would try to catch it with 75% probability.](docs/images/rabbit-fleeing.jpg)
+
+*The same hour, from the prey's side. Basil, hungry and thirsty, chose Flee, scored its alertness 3.8 out of 4, and put the chance that a wolf would go after it at 75%. It had escaped Storm three times already.*
+
+- A 40 × 26 valley in 3D: a stream with fords, ponds, woods, meadows with wild flowers, and wooded hills around it. The sun, moon and stars follow the clock, and grass goes bare where animals have grazed. Rabbits, deer and wolves walk, trot, hop, graze, lie down, hide, hunt and drink, and keep moving smoothly across the turn of every hour.
+- A **Mind** panel for the animal you click: its hunger and thirst, what it chose this hour and how sure the model was, the probability it gave to every action ("Why it chose this"), its answers to the extra questions, and its recent memories. The model's confidence is its own estimate, so it is not always the same number as the probability of the action it chose.
+- A status line in live mode that shows the pace and the real usage so far, for example `Live: 1.0 hours per second · 214 model requests, 85,310 input tokens`. If the model is slow, the valley's clock slows down and the badge pulses while it waits. Decisions are never skipped or guessed.
+- A red dashed line from a wolf that chose to hunt to its target. A legend in the corner of the view explains it, and clicking the legend hides the lines.
 - A population chart and an event log. Playback is always one valley hour per second, with no fast-forward. The timeline slider appears once a live run has played to its end, so you cannot skip ahead of it; a finished replay has it from the start.
 
-A month is 720 valley hours, so a full run takes 12 minutes or more, and longer if the model is slow. Add `--days 2` for a short one. Closing the page stops the run and saves what was decided to `runs/live-jev-seed7/`. The valley does not start until a page is open, so no model calls are spent unseen.
+![The valley at midday, seen from above, with the population chart and event log](docs/images/valley-day.jpg)
+
+![The same valley at night: the sun has set, and the red lines show wolves that are hunting in the dark](docs/images/valley-night.jpg)
+
+| Control | What it does |
+|---|---|
+| Drag, or Q and E | Turn the view |
+| Scroll, pinch, or + and − | Zoom |
+| Right-drag, or two fingers | Slide the view |
+| `0` or **Reset view** | See the whole valley again |
+| Click an animal | Open its Mind panel; **Follow** keeps the camera on it; Esc clears the selection |
+| Space | Play or pause. In live mode, pausing freezes the valley: no new decisions are asked while paused |
+| ← and → | Step one hour back or forward, once the timeline is available |
+| `F` or **Full screen** | Full screen; Esc leaves it |
 
 **The valley does not run without a model.** `run` and `live` accept only Jev (or another server that speaks the same request format), and stop at once if the key is missing or a call fails. There is no offline mode and no hand-written stand-in inside the valley. Earlier versions had two comparison brains, `rules` and `random`; the last commit that has them is `4d545ed`.
 
-**Pausing freezes the valley.** The page tells the server where its playhead is and whether it is paused. While it is paused, or more than three hours ahead of what is on screen, no new hour is started and nothing is asked of Jev; the hour already in flight finishes. Closing the page ends the run after a few seconds and saves what was decided.
+**Pausing freezes the valley.** The page tells the server where its playhead is and whether it is paused. While it is paused, or more than three hours ahead of what is on screen, no new hour is started and nothing is asked of Jev; the hour already in flight finishes. Closing the page ends the run after a few seconds and saves what was decided. The valley does not start until a page is open, so no model calls are spent unseen.
 
-To watch a finished run afterwards, see [Run it](#run-it). There is no bundled demo: every run you watch is one you make.
+The screenshots and the clip above come from one real month-long run on Jev (seed 7), played back in the viewer; there is no bundled demo, so every run you watch is one you make.
+
+## Commands
+
+| You want to | Command | Key needed | Opens a window | Writes to |
+|---|---|---|---|---|
+| Watch a valley as the model decides it | `python -m valley live --seed 7 --open` | yes | **yes**, in your browser | `runs/live-jev-seed7/` |
+| Run a valley without watching it | `python -m valley run --seed 7 --days 2` | yes | **no** | `runs/run-jev-seed7/` |
+| Watch a finished run | `python -m valley view runs/<run>/replay.json -o valley.html`, then open `valley.html` | no | **yes**, once you open the file | `valley.html` |
+| Compare conditions over several seeds | `python -m valley bench survival` | yes | **no** | `results/survival/` |
+| Set the hesitation thresholds | `python -m valley tune --thresholds RUN_DIR [RUN_DIR ...]` | no | no | `results/hesitation/thresholds.json` |
+| Run the tests (they run offline, with stand-ins for the model) | `python -m pytest` | no | no | nothing |
+
+`run` and `bench` open nothing: they print progress, write files and finish. To see a valley, use `live`, or use `view` on the `replay.json` that `run` wrote. When `run` finishes it prints the exact `view` command to paste. A run folder holds `replay.json` (the whole run, for the viewer), `metrics.json` (survival, blunders, calibration, judgement and cost) and, if you asked for it, `requests.jsonl` (every request and response). `live` keeps the request log by default, roughly 100 MB for a month: add `--no-log-requests` to skip it.
+
+Options for `run` and `live`:
+
+| Option | Meaning | Default |
+|---|---|---|
+| `--seed N` | Same seed, same map, same starting animals | 7 |
+| `--days N` | Length of the run | 30 |
+| `--size WxH` | Map size | 40x26 |
+| `--max-creatures N` | Cap on the number of animals | 75 |
+| `--questions rich\|basic` | `rich` also asks the score and yes/no questions and the world reacts; `basic` asks only which action to take | rich |
+| `--hesitate-below C` | An animal freezes for the hour when the model's confidence is below `C` | off |
+| `--batch N`, `--workers N` | Animals per request, and requests in parallel | 16, 4 |
+| `--timeout S`, `--retries N` | Seconds per request, and retries after a rate limit, server error or timeout before the run stops | 30, 2 |
+| `--log-requests` / `--no-log-requests` | Keep every request and response in `requests.jsonl` | off for `run`, on for `live` |
+| `--out DIR`, `--run-id ID` | Where the run is saved, and its name | `runs/<run id>` |
+| `--brain jev` | Which model (see below) | jev |
+| `--port N`, `--pace S`, `--open`, `--no-wait` | `live` only: the port (8765), the least real seconds per valley hour (1.0), open the browser, start before a page has connected | |
+
+Other servers that speak the same request format can be used with `--brain system-one@BASE_URL#MODEL` (an optional key goes in `SYSTEM_ONE_API_KEY`). For Jev the environment variables are `TYPESAFE_API_KEY`, and optionally `TYPESAFE_BASE_URL` and `TYPESAFE_MODEL`.
+
+**What a run costs.** Every run prints how many requests and tokens it used, and the same numbers are in `metrics.json`. A rich-mode day is about 1 million input tokens. Three month-long runs on 2026-10-25 used 16 to 25 million input tokens each (1,600 to 2,400 requests, a median of about 0.4 s per request), which is under a dollar each at the documented price. The model's replies are free. `bench` prints how many decisions and requests it expects and asks before spending anything.
+
+**Reproduce the benchmark.** `bench` skips runs that are already done and writes everything to `results/`:
+
+```bash
+python -m valley bench survival       # Jev on five seeds, 30 days each
+python -m valley tune --thresholds runs/run-jev-seed7 -o results/hesitation/thresholds.json
+python -m valley bench hesitation     # Jev with hesitation off, and at its own 10th and 25th percentile confidence
+```
+
+The default set is small on purpose (about 15 model runs, roughly $10 to $16 at the documented price, an estimate): the first five benchmark seeds. To use all ten, add `--seeds 3,7,11,19,23,42,57,64,88,101` to either command. `matplotlib` draws the charts. The `tune` step needs a smoke run, for example `python -m valley run --seed 7 --days 2 --log-requests`.
+
+**The viewer** is one HTML file, `viewer/index.html`. It loads Three.js, and its sky add-on, from a CDN, so it needs a network connection; everything else in it, the land, water, plants and animals, is drawn in code and nothing is downloaded. It lowers its own resolution when a device cannot keep up. Add `?quality=low` to the page address for a lighter version, or `?resolution=full` to keep the full resolution whatever the speed. `?webgl=off` shows the flat map. You can also open `viewer/index.html` yourself and drop a `replay.json` on it.
+
+## Troubleshooting
+
+| What you see | What to do |
+|---|---|
+| `error: TYPESAFE_API_KEY is not set. Export it before using the jev brain.` | Export the key in the same terminal you run the command from (step 2 of the quick start). |
+| "I ran `run` or `bench` and no window opened" | They are not meant to. Use `live --open`, or `view` on the `replay.json` that `run` wrote. |
+| The terminal says `Waiting for a viewer to connect` and nothing happens | The valley starts only when a page is open. Open the address it printed, `http://127.0.0.1:8765` unless you changed `--port`. |
+| The browser did not open | Paste the printed address into a browser yourself. `--open` is only a convenience. |
+| `Address already in use` | Another program has port 8765. Use `--port 8766`. |
+| The run stopped with `error: the run stopped.` followed by a step, an animal and an error | Any failed call stops the run on purpose: no animal is ever given a made-up decision. Check the key and your network, then run it again. Rate limits, server errors and timeouts are retried twice first (`--retries`). Add `--log-requests` to keep the request log for diagnosis. |
+| `Nothing was saved.` after a failure | A run that stops on an error saves no replay. In live mode, closing the page or pressing Ctrl-C in the terminal does save what was decided so far. |
+| "The 3D view needs WebGL, which is not available here. Showing a flat map instead." | Your browser has WebGL switched off. Turn on hardware acceleration, or use another browser. The flat map shows the same run. |
+| The picture is blurry or the camera stutters | The viewer lowers its resolution when it cannot keep up, and never raises it again. Reload the page. Add `?resolution=full` to the address to keep full resolution, or `?quality=low` to draw a lighter scene. |
+| The timeline slider is missing in live mode and a note says the timeline unlocks when the run has finished | That is on purpose: a live run cannot be skipped ahead of the model. The slider appears when the run ends. To scrub through a finished run, use `view` on its replay. |
+| The page is blank when you are offline | The viewer loads Three.js from a CDN. Connect to a network and reload. |
 
 ## The question
 
@@ -35,9 +156,22 @@ Does a typed decision model make sensible decisions, and does it know when it is
 
 ## Results
 
-Results are produced by `python -m valley bench` and written to `results/<experiment>/` as `summary.md` and three charts. The full runs against Jev have not been done yet, so there is nothing to report here. Nothing in this README is typed by hand from a result.
+Results are produced by `python -m valley bench` and written to `results/<experiment>/` as `summary.md` and three charts. The full benchmark against Jev has not been run yet, so there are no benchmark results to report. To reproduce them, see [Commands](#commands).
 
-To reproduce them, see [Run it](#run-it).
+### A first look: three month-long runs on Jev
+
+Before the benchmark, three single month-long runs (seeds 7, 11 and 21, rich questions, on 2026-10-25) were done by hand, to see whether the valley holds together with Jev and whether the animals really try to survive. They are one-off runs, read from their replays and request logs with a throwaway script that is not in the repo, so treat them as an early look and not as a measurement. Final populations:
+
+| Seed | Rabbits (24 at the start) | Deer (10) | Wolves (5) | All three alive at the end |
+|---|---|---|---|---|
+| 7 | 45 | 6 | 2 | yes |
+| 11 | 19 | 1 | 0 (the last wolf died on day 27) | no |
+| 21 | 25 | 0 (the last deer died on day 19) | 4 | no |
+
+- **The valley is not balanced for Jev yet.** With the old stand-in brains all three species survived on 96 to 97% of unseen seeds; with Jev they survived in one run of three. Rabbits are the buffer (74 to 130 born per run). Deer had 29 births against 52 deaths over the three runs, and all 18 wolf deaths were starvation. The valley has not been retuned for Jev.
+- **Wolves chase deer almost as often as they chase rabbits, and rarely catch them:** 40 catches in 426 chases of deer (9%), against 229 in 535 chases of rabbits (43%). A chase costs a wolf three times the energy of resting, and it keeps the deer running: deer spent 21% of their hours fleeing.
+- **The animals do try to survive.** Hungry prey with no wolf in sight ate 92% of the time (rabbits) and 96% (deer), and thirsty ones drank 88% and 95%. With a wolf within two tiles, rabbits fled 92% of the time and deer 93%. Hungry wolves with a carcass in sight scavenged 97% of the time, hungry wolves with prey in view hunted 83% of the time and scavenged 14%, and a parched wolf drank every time (18 of 18). The animals that starved died trying: in their last day, wolves spent 88% of their hours hunting or scavenging, and prey spent 62 to 71% eating and 20 to 34% running away. They starved because there was no prey or no food near them.
+- **Two weaknesses.** Prey flee from wolves that are still three or more tiles away 66 to 80% of the time, which costs energy. And personality changes effort a great deal: lazy animals rested 53% of the time (rabbits), 41% (deer) and 72% (wolves), restless ones never. Lazy and timid wolves hunted or scavenged in 78% and 74% of their hungry hours, against 84 to 95% for the other personalities, and lazy wolves starved least (0.9 deaths per 1000 wolf-hours against 2.2 to 2.9; only 24 wolves in all, so this is a hint).
 
 ## How it works
 
@@ -85,7 +219,29 @@ Each hour, every animal gets a plain-language view of what it can see and feel, 
 }
 ```
 
-The client expects each answer to hold `type`, `choice`, `probabilities` (one per option) and `confidence`, plus `usage.input_tokens` and `usage.output_tokens` for the cost figures. A captured response from a real run will be added here once there is one; every request and response of a run is logged to `requests.jsonl`.
+The client expects each answer to hold `type` and the fields of that type (`choice`, `probabilities` and `confidence` for a choice), plus `usage.input_tokens` and `usage.output_tokens` for the cost figures. This is a real response, captured from a month-long run on 2026-10-25. It answers the rich-mode request for Juniper 6, a young rabbit with two hunting wolves in view, 3 and 5 tiles away, and plants right where it stands. The request carried a `choice` question and the `alert`, `breed` and `attack` questions; the score's `legend` is left out here to save space.
+
+```json
+{
+  "model": "jev-1.14.0",
+  "answers": {
+    "action": {
+      "type": "choice", "choice": "flee", "confidence": 0.47,
+      "probabilities": {"eat": 0.08, "drink": 0.0, "flee": 0.54, "hide": 0.11,
+                        "rest": 0.0, "seek_mate": 0.0, "follow_group": 0.27, "explore": 0.0}
+    },
+    "alert": {
+      "type": "score", "score": 3.66, "confidence": 0.69,
+      "probabilities": {"0": 0.01, "1": 0.01, "2": 0.03, "3": 0.24, "4": 0.71}
+    },
+    "breed":  {"type": "noul", "noul": 0.04},
+    "attack": {"type": "noul", "noul": 0.78}
+  },
+  "usage": {"input_tokens": 920, "output_tokens": 126}
+}
+```
+
+Every request and response of a run can be kept in `requests.jsonl` (`--log-requests`).
 
 Several animals go into one request (16 by default, `--batch` to change it), each with its own question id, and requests run in parallel. The hour waits for every decision.
 
@@ -122,46 +278,7 @@ The valley was changed in the ways real predator and prey systems suggest, and e
 - **Food limits the prey.** Plants regrow slower, so the prey settle below their caps instead of piling up against them. NetLogo's wolf and sheep model needs the same thing to be stable ([NetLogo](https://ccl.northwestern.edu/netlogo/models/WolfSheepPredation)).
 - **More room.** A bigger valley at a lower density gives prey places to be, which is the idea behind [Huffaker's mite experiment](https://en.wikipedia.org/wiki/Huffaker%27s_mite_experiment).
 
-Things that did not help were tried and dropped: weaker wolves, stronger hiding, digestion time after a kill, and crowding between wolves. The valley was balanced with two hand-written stand-in brains, one that follows simple rules and one that picks at random, so that it could be checked without a model. With them, all three species survived on 96 to 97% of 100 unseen seeds, wolves were never the only species left, and the random brain collapsed every time. Those stand-ins were later removed because the valley does not run without a model, so how Jev does in this valley is what the benchmark is for. The numbers, the experiments and the limits are in the [ecosystem redesign record](docs/build-spec.md#ecosystem-redesign-record).
-
-## Run it
-
-Python 3.11 or newer. The simulation, client and viewer need nothing else. `matplotlib` is optional and only draws the charts.
-
-```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev,charts]"
-python -m pytest                      # every test runs offline, with no API key, using stand-ins for the model
-```
-
-Runs use a model, so they need a key. Every run ends by printing how many requests and tokens it used, and the same numbers are in the run's `metrics.json`. Keys are read only from the environment and never written to a log:
-
-```bash
-export TYPESAFE_API_KEY=...           # required for jev; also TYPESAFE_BASE_URL, TYPESAFE_MODEL
-python -m valley run --seed 7 --days 2 --log-requests    # a small first run with Jev, the default brain
-```
-
-Watch a finished run in the viewer (to watch one as it is decided, see [See it running](#see-it-running)):
-
-```bash
-python -m valley view runs/run-jev-seed7/replay.json -o valley.html   # then open valley.html in a browser
-```
-
-The viewer loads Three.js, and its sky add-on, from a CDN, so it needs a network connection. Everything else in it, the land, water, plants and animals, is drawn in code, and nothing is downloaded. It lowers its own resolution when a device cannot keep up; add `?quality=low` to the page address to force the lighter version. The offline `rules` and `random` brains are the baselines the models are compared against. They are not run by default; name one with `--brain rules` if you want to see it.
-
-Reproduce the results. `bench` prints how many decisions and requests it expects and asks before spending any, skips runs that are already done, and writes everything to `results/`:
-
-```bash
-python -m valley bench survival       # jev on five seeds, 30 days each
-python -m valley tune --thresholds runs/run-jev-seed7 -o results/hesitation/thresholds.json
-python -m valley bench hesitation     # Jev with hesitation off, and at its own 10th and 25th percentile confidence
-```
-
-The default set is small on purpose (about 15 model runs): the first five benchmark seeds. To use all ten, add `--seeds 3,7,11,19,23,42,57,64,88,101` to either command.
-
-Other servers that speak the same request format can be used with `--brain system-one@BASE_URL#MODEL` (an optional key goes in `SYSTEM_ONE_API_KEY`).
-
-The full specification and the log of every decision made while building it are in [docs/build-spec.md](docs/build-spec.md).
+Things that did not help were tried and dropped: weaker wolves, stronger hiding, digestion time after a kill, and crowding between wolves. The valley was balanced with two hand-written stand-in brains, one that follows simple rules and one that picks at random, so that it could be checked without a model. With them, all three species survived on 96 to 97% of 100 unseen seeds, wolves were never the only species left, and the random brain collapsed every time. Those stand-ins were later removed because the valley does not run without a model, so how Jev does in this valley is what the benchmark is for. A first look with three month-long runs is under [Results](#a-first-look-three-month-long-runs-on-jev), and it is not encouraging for the deer and the wolves. The numbers, the experiments and the limits are in the [ecosystem redesign record](docs/build-spec.md#ecosystem-redesign-record).
 
 ## Design decisions
 
@@ -177,14 +294,13 @@ The full specification and the log of every decision made while building it are 
 - Model answers vary between runs, so one run is not a measurement. The benchmark reports its seeds together (five by default, ten with `--seeds`), and five seeds give noisier medians than ten.
 - The blunder rules are a simple, hand-written measure of what is clearly a bad choice, so they are a rough guide, not a verdict.
 - Results apply to this valley and these prompts, not to the models in general.
-- The balance of the valley was tuned with offline stand-ins that are no longer in the repo, and has not been checked with Jev. In the rich mode a species sat at its population cap for over half the month on 11% of unseen seeds, against 2% in the choice-only mode. The game's numbers are scaled for play, not taken from field data, and the sources above are the only research behind them.
-- The live API has not been called while building this. The client was tested against a fake server written from the documented request and response shape.
+- The balance of the valley was tuned with offline stand-ins that are no longer in the repo. With Jev, three month-long runs kept all three species alive in only one (see [Results](#results)): deer and wolves can die out, largely because wolves keep chasing deer they rarely catch. The valley has not been retuned for Jev. The game's numbers are scaled for play, not taken from field data, and the sources above are the only research behind them.
+- Personality changes how hard an animal tries, so which personality an animal is dealt can change its odds. It was seen on 24 wolves only.
+- The Jev client was first written against a fake server built from the documented request and response shape, and has since been checked against the live API: one-day runs and three month-long runs on 2026-10-25, with the model `jev-1.14.0`. A later model version may answer differently.
 
 ## How this was built
 
 This project was built with AI assistance (Claude). The code, tests and viewer were written by the assistant from a written build specification, and every choice the specification left open is recorded in [docs/build-spec.md](docs/build-spec.md).
-
-<!-- Add here, before publishing: what you designed, decided and verified yourself. The assistant cannot state that for you. -->
 
 ## License
 
