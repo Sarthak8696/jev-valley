@@ -1,6 +1,7 @@
 """The System One client, used for Jev and for any other server that speaks the same API.
 
-Every creature gets one `Choice` question. Several creatures are batched into one
+Every creature gets one `Choice` question and, in the rich mode (the default), `Score` and
+`Noul` questions as well. Several creatures are batched into one
 request, and requests run in parallel. Nothing stands in for the model: if a call
 fails (after the retries for rate limits, server errors and timeouts), or any answer
 is missing or invalid, a `DecisionError` is raised and the run stops. The API key

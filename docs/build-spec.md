@@ -6,7 +6,7 @@ This document is the single source of truth for building Jev Valley. Follow it i
 
 ## 1. What we are building
 
-Jev Valley is a small valley that lives for one month. Rabbits, deer and wolves each have a name, a personality, hunger, thirst and a short memory. Every valley hour, every animal decides what to do next by asking a typed decision model one `Choice` question. Ordinary, deterministic code then carries the action out. The valley is shown in a 3D "god's view" where one valley hour plays out in one real second.
+Jev Valley is a small valley that lives for one month. Rabbits, deer and wolves each have a name, a personality, hunger, thirst and a short memory. Every valley hour, every animal decides what to do next by asking a typed decision model a `Choice` question and, in the default rich mode, a few `Score` and `Noul` questions in the same request. Ordinary, deterministic code then carries the action out. The valley is shown in a 3D "god's view" where one valley hour plays out in one real second.
 
 The project is an experiment that looks like a living world.
 
@@ -467,7 +467,7 @@ class Brain:
 
 ### 7.2 The question
 
-Every creature gets one `Choice` question.
+Every creature gets one `Choice` question. In the rich mode (the default, `--questions rich`) the same request also carries `score` and `noul` questions, described in `valley/questions.py` and in the Decisions log; `--questions basic` asks only the choice.
 
 - `type`: `"choice"`
 - `instructions`: exactly the constant below, plus, in batched requests, the sentence `Decide only for the creature with id '{id}', using creatures['{id}'].`
